@@ -3,7 +3,7 @@
 client_id = "caec388204048b32c199650ad00869b8"
 name = "real-authenticator-v1"
 handle = "real-authenticator-v1"
-application_url = "https://example.com/"
+application_url = "https://d4b5-116-90-119-214.ngrok-free.app"
 embedded = true
 
 [build]
@@ -23,10 +23,14 @@ api_version = "2025-04"
 
 [access_scopes]
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
-scopes = "write_products"
+scopes = "read_products, write_products"
 
 [auth]
-redirect_urls = [ "https://example.com/api/auth" ]
+redirect_urls = [
+  "https://d4b5-116-90-119-214.ngrok-free.app/auth/callback",
+  "https://d4b5-116-90-119-214.ngrok-free.app/auth/shopify/callback",
+  "https://d4b5-116-90-119-214.ngrok-free.app/api/auth/callback"
+]
 
 [pos]
 embedded = false

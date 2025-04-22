@@ -12,7 +12,7 @@ import {
 } from "@shopify/polaris";
 import { TitleBar, useAppBridge } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
-import { prisma } from "../db.server";
+import prisma from "../db.server";
 
 export const loader = async ({ request }) => {
   await authenticate.admin(request);
@@ -30,153 +30,191 @@ export const action = async ({ request }) => {
       let afterCursor = null;
       let allProducts = [];
       let processedCount = 0;
+      let failedCount = 0;
+      const failedProducts = [];
+
+      console.log("Starting product sync...");
 
       while (hasNextPage) {
-        const query = `
-          query getProducts($cursor: String) {
-            products(first: 10, after: $cursor) {
-              pageInfo {
-                hasNextPage
-                endCursor
-              }
-              edges {
-                node {
-                  id
-                  title
-                  handle
-                  status
-                  images(first: 5) {
-                    edges {
-                      node {
-                        id
-                        src
-                        altText
+        try {
+          const query = `
+            query getProducts($cursor: String) {
+              products(first: 10, after: $cursor) {
+                pageInfo {
+                  hasNextPage
+                  endCursor
+                }
+                edges {
+                  node {
+                    id
+                    title
+                    handle
+                    status
+                    images(first: 5) {
+                      edges {
+                        node {
+                          id
+                          src
+                          altText
+                        }
                       }
                     }
-                  }
-                  metafields(first: 20) {
-                    edges {
-                      node {
-                        id
-                        namespace
-                        key
-                        value
-                        type
+                    metafields(first: 20) {
+                      edges {
+                        node {
+                          id
+                          namespace
+                          key
+                          value
+                          type
+                        }
                       }
                     }
                   }
                 }
               }
             }
+          `;
+
+          const response = await admin.graphql(query, {
+            variables: { cursor: afterCursor },
+          });
+
+          const json = await response.json();
+          
+          if (!json?.data?.products) {
+            throw new Error("Invalid products response from Shopify");
           }
-        `;
 
-        const response = await admin.graphql(query, {
-          variables: { cursor: afterCursor },
-        });
+          const productsConnection = json.data.products;
+          const products = productsConnection.edges.map((edge) => edge.node);
+          allProducts = allProducts.concat(products);
 
-        const json = await response.json();
-        
-        if (!json?.data?.products) {
-          throw new Error("Invalid products response from Shopify");
+          hasNextPage = productsConnection.pageInfo.hasNextPage;
+          afterCursor = productsConnection.pageInfo.endCursor;
+        } catch (fetchError) {
+          console.error("Error fetching products:", fetchError);
+          hasNextPage = false;
+          throw fetchError;
         }
-
-        const productsConnection = json.data.products;
-        const products = productsConnection.edges.map((edge) => edge.node);
-        allProducts = allProducts.concat(products);
-
-        hasNextPage = productsConnection.pageInfo.hasNextPage;
-        afterCursor = productsConnection.pageInfo.endCursor;
       }
 
-      // Start a transaction for all database operations
-      const transactionResults = await prisma.$transaction(async (prisma) => {
-        const results = [];
+      console.log(`Fetched ${allProducts.length} products from Shopify`);
+
+      const batchSize = 10;
+      for (let i = 0; i < allProducts.length; i += batchSize) {
+        const batch = allProducts.slice(i, i + batchSize);
         
-        for (const product of allProducts) {
-          try {
-            if (!product?.id) {
-              console.warn("Skipping product with no ID");
-              continue;
-            }
+        try {
+          await prisma.$transaction(async (prisma) => {
+            for (const product of batch) {
+              try {
+                if (!product?.id) {
+                  console.warn("Skipping product with no ID:", product);
+                  failedCount++;
+                  failedProducts.push({
+                    productId: null,
+                    error: "Missing product ID"
+                  });
+                  continue;
+                }
 
-            // 1. Upsert the main product
-            const dbProduct = await prisma.product.upsert({
-              where: { shopifyId: product.id },
-              update: {
-                title: product.title || "",
-                handle: product.handle || "",
-                status: product.status || "ACTIVE", // Default status
-              },
-              create: {
-                shopifyId: product.id,
-                title: product.title || "",
-                handle: product.handle || "",
-                status: product.status || "ACTIVE",
-              },
-            });
-
-            // 2. Handle images in a separate transaction
-            if (product.images?.edges?.length > 0) {
-              await prisma.image.deleteMany({ 
-                where: { productId: dbProduct.id } 
-              });
-
-              await prisma.image.createMany({
-                data: product.images.edges.map(({ node: image }) => ({
-                  shopifyId: image.id,
-                  src: image.src || "",
-                  altText: image.altText || null, // Matches your schema (optional)
-                  productId: dbProduct.id,
-                })),
-                skipDuplicates: true,
-              });
-            }
-
-            // 3. Handle metafields with RAU_ prefix
-            if (product.metafields?.edges?.length > 0) {
-              const rauMetafields = product.metafields.edges
-                .map(({ node }) => node)
-                .filter(mf => mf?.key?.startsWith("RAU_"));
-
-              if (rauMetafields.length > 0) {
-                await prisma.metafield.deleteMany({ 
-                  where: { productId: dbProduct.id } 
+                const dbProduct = await prisma.product.upsert({
+                  where: { shopifyId: product.id },
+                  update: {
+                    title: product.title || "",
+                    handle: product.handle || "",
+                    status: product.status || "ACTIVE",
+                  },
+                  create: {
+                    shopifyId: product.id,
+                    title: product.title || "",
+                    handle: product.handle || "",
+                    status: product.status || "ACTIVE",
+                  },
                 });
 
-                await prisma.metafield.createMany({
-                  data: rauMetafields.map(mf => ({
-                    shopifyId: mf.id,
-                    namespace: mf.namespace || "",
-                    key: mf.key || "",
-                    value: mf.value || "",
-                    type: mf.type || "",
-                    productId: dbProduct.id,
-                  })),
-                  skipDuplicates: true,
+                if (product.images?.edges?.length > 0) {
+                  try {
+                    await prisma.image.deleteMany({ 
+                      where: { productId: dbProduct.id } 
+                    });
+
+                    await prisma.image.createMany({
+                      data: product.images.edges.map(({ node: image }) => ({
+                        shopifyId: image.id,
+                        src: image.src || "",
+                        altText: image.altText || null,
+                        productId: dbProduct.id,
+                      })),
+                    });
+                  } catch (imageError) {
+                    console.error(`Image processing failed for product ${product.id}:`, imageError);
+                    throw imageError;
+                  }
+                }
+
+                if (product.metafields?.edges?.length > 0) {
+                  try {
+                    const rauMetafields = product.metafields.edges
+                      .map(({ node }) => node)
+                      .filter(mf => mf?.key?.startsWith("RAU_"));
+
+                    if (rauMetafields.length > 0) {
+                      await prisma.metafield.deleteMany({ 
+                        where: { productId: dbProduct.id } 
+                      });
+
+                      await prisma.metafield.createMany({
+                        data: rauMetafields.map(mf => ({
+                          shopifyId: mf.id,
+                          namespace: mf.namespace || "",
+                          key: mf.key || "",
+                          value: mf.value || "",
+                          type: mf.type || "",
+                          productId: dbProduct.id,
+                        })),
+                      });
+                    }
+                  } catch (metafieldError) {
+                    console.error(`Metafield processing failed for product ${product.id}:`, metafieldError);
+                    throw metafieldError;
+                  }
+                }
+
+                processedCount++;
+                console.log(`Successfully processed product ${product.id}`);
+              } catch (productError) {
+                console.error(`Failed to process product ${product?.id}:`, productError);
+                failedCount++;
+                failedProducts.push({
+                  productId: product?.id,
+                  error: productError.message
                 });
+                throw productError;
               }
             }
-
-            processedCount++;
-            results.push({ success: true, productId: product.id });
-          } catch (error) {
-            console.error(`Failed to process product ${product.id}:`, error);
-            results.push({ success: false, productId: product.id, error });
-            continue;
-          }
+          });
+        } catch (batchError) {
+          console.error(`Batch ${i}-${i + batchSize} failed:`, batchError);
         }
-        return results;
+      }
+
+      console.log("Sync completed with results:", {
+        total: allProducts.length,
+        processed: processedCount,
+        failed: failedCount,
+        failedProducts
       });
 
-      console.log("Transaction results:", transactionResults);
       return { 
         success: true,
         stats: {
           total: allProducts.length,
           processed: processedCount,
-          failed: allProducts.length - processedCount
-        }
+          failed: failedCount
+        },
+        failedProducts: process.env.NODE_ENV === "development" ? failedProducts : undefined
       };
     }
 
@@ -186,7 +224,11 @@ export const action = async ({ request }) => {
 
     return null;
   } catch (error) {
-    console.error("Action failed:", error);
+    console.error("Action failed:", {
+      message: error.message,
+      stack: error.stack,
+      timestamp: new Date().toISOString()
+    });
     return {
       success: false,
       error: error.message || "Unknown error occurred",
@@ -194,6 +236,7 @@ export const action = async ({ request }) => {
     };
   }
 };
+
 
 export default function Index() {
   const fetcher = useFetcher();
@@ -207,11 +250,15 @@ export default function Index() {
     if (fetcher.data?.success) {
       shopify.toast.show(
         `Synced ${fetcher.data.stats.processed} products successfully` +
-        (fetcher.data.stats.failed > 0 ? ` (${fetcher.data.stats.failed} failed)` : '')
+        (fetcher.data.stats.failed > 0 ? ` (${fetcher.data.stats.failed} failed)` : ''),
+        { duration: 5000 }
       );
     }
     if (fetcher.data?.success === false) {
-      shopify.toast.show(`Sync failed: ${fetcher.data.error}`, { isError: true });
+      shopify.toast.show(`Sync failed: ${fetcher.data.error}`, { 
+        isError: true,
+        duration: 10000 
+      });
       console.error("Error details:", fetcher.data);
     }
   }, [fetcher.data, shopify]);
@@ -239,15 +286,19 @@ export default function Index() {
                     onClick={syncProducts} 
                     loading={isLoading}
                     disabled={isLoading}
+                    primary
                   >
                     {isLoading ? "Syncing..." : "Sync Products from Shopify"}
                   </Button>
                 </InlineStack>
                 
                 {isLoading && (
-                  <Text variant="bodyMd" tone="subdued">
-                    Syncing products... Please don't close this window.
-                  </Text>
+                  <Box padding="200">
+                    <Text variant="bodyMd" tone="subdued">
+                      Syncing products... Please don't close this window.
+                    </Text>
+                    <progress />
+                  </Box>
                 )}
 
                 {fetcher.data?.stats && (
@@ -257,6 +308,26 @@ export default function Index() {
                       Successful: {fetcher.data.stats.processed}<br />
                       Failed: {fetcher.data.stats.failed}<br />
                       Total processed: {fetcher.data.stats.total}
+                    </Text>
+                  </Box>
+                )}
+
+                {fetcher.data?.stats?.failed > 0 && (
+                  <Box
+                    padding="400"
+                    background="bg-surface-warning"
+                    borderWidth="025"
+                    borderRadius="200"
+                    borderColor="border-warning"
+                  >
+                    <Text variant="bodyMd" tone="warning">
+                      <strong>Warning:</strong> {fetcher.data.stats.failed} products failed to sync.
+                      {process.env.NODE_ENV === "development" && fetcher.data.failedProducts && (
+                        <details>
+                          <summary>Error details</summary>
+                          <pre>{JSON.stringify(fetcher.data.failedProducts, null, 2)}</pre>
+                        </details>
+                      )}
                     </Text>
                   </Box>
                 )}
@@ -271,6 +342,12 @@ export default function Index() {
                   >
                     <Text variant="bodyMd" tone="critical">
                       <strong>Error:</strong> {fetcher.data.error}
+                      {process.env.NODE_ENV === "development" && fetcher.data.stack && (
+                        <details>
+                          <summary>Stack trace</summary>
+                          <pre>{fetcher.data.stack}</pre>
+                        </details>
+                      )}
                     </Text>
                   </Box>
                 )}
