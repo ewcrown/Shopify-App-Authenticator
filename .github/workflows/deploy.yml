@@ -55,7 +55,7 @@ jobs:
             if [ $? -eq 0 ]; then
               pm2 restart shopify-authenticator-app
             else
-              m2 start npm --name "shopify-authenticator-app" -- start
+              pm2 start npm --name "shopify-authenticator-app" -- start
             fi
 
             # Save PM2 configuration
