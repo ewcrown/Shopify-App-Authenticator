@@ -16,7 +16,7 @@ jobs:
 
       # ✅ Step 2: Install Dependencies Locally (Runner)
       - name: Install Dependencies
-        run: npm run install-all
+        run: npm run install
 
       # ✅ Step 4: Deploy the Application to EC2
       - name: Deploy to EC2
@@ -46,7 +46,6 @@ jobs:
             cd /home/ubuntu/shopify-authenticator-app
 
             git stash
-            npm install
             # Prisma Generate and Migrations
             npm run setup
             npm run build
