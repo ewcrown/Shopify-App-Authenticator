@@ -16,7 +16,7 @@ jobs:
 
       # ✅ Step 2: Install Dependencies Locally (Runner)
       - name: Install Dependencies
-        run: npm run install
+        run: npm install
 
       # ✅ Step 4: Deploy the Application to EC2
       - name: Deploy to EC2
