@@ -9,8 +9,6 @@ import prisma from "./db.server";
 
 const { SHOPIFY_API_KEY,SHOPIFY_API_SECRET,SCOPES, SHOPIFY_APP_URL   } = process.env
 
-console.log({SHOPIFY_API_KEY,SHOPIFY_API_SECRET,SCOPES, SHOPIFY_APP_URL})
-
 const shopify = shopifyApp({
   apiKey: SHOPIFY_API_KEY,
   apiSecretKey: SHOPIFY_API_SECRET || "",
