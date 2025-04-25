@@ -18,41 +18,10 @@ model Product {
   shopifyId   String     @unique
   title       String
   handle      String     @unique
-  status      String
-  createdAt   DateTime   @default(now())
-  images      Image[]    @relation("ProductImages")
-  metafields  Metafield[] @relation("ProductMetafields")
+  order_id    String
 
   @@index([shopifyId])
   @@index([handle])
-}
-
-model Image {
-  id        String   @id @default(cuid())
-  shopifyId String
-  src       String
-  altText   String?
-  product   Product  @relation("ProductImages", fields: [productId], references: [id])
-  productId String
-
-  @@index([productId])
-  @@index([shopifyId])
-}
-
-model Metafield {
-  id        String   @id @default(cuid())
-  shopifyId String
-  namespace String
-  key       String
-  value     String
-  type      String
-  product   Product  @relation("ProductMetafields", fields: [productId], references: [id])
-  productId String
-
-  @@index([productId])
-  @@index([shopifyId])
-  @@index([key])
-  @@index([namespace, key])
 }
 
 model Session {

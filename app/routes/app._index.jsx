@@ -158,7 +158,7 @@ export const action = async ({ request }) => {
                   try {
                     const rauMetafields = product.metafields.edges
                       .map(({ node }) => node)
-                      .filter(mf => mf?.key?.startsWith("RAU_"));
+                      .filter(mf => mf?.key?.startsWith("rau_"));
 
                     if (rauMetafields.length > 0) {
                       await prisma.metafield.deleteMany({ 
@@ -281,7 +281,6 @@ export default function Index() {
                   Shopify Sync Panel
                 </Text>
                 <InlineStack gap="300">
-                  <Button onClick={syncOrders}>Sync Real Authenticator Orders</Button>
                   <Button 
                     onClick={syncProducts} 
                     loading={isLoading}
