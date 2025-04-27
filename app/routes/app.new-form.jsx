@@ -261,10 +261,6 @@ export async function action({ request }) {
   };
 
   const order = await createOrder(payload);
-  
   const product = await createProduct(data, image_url, accessToken, order.id);
-  console.log('order==>', order);
-  console.log('product==>', product);
-
   return json({ success: true, data, order, product });
 }
