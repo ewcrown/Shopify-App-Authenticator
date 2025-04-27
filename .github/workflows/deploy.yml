@@ -1,0 +1,62 @@
+name: Deploy to EC2
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      # ✅ Step 1: Checkout Code
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # ✅ Step 2: Install Dependencies Locally (Runner)
+      - name: Install Dependencies
+        run: npm install
+
+      # ✅ Step 4: Deploy the Application to EC2
+      - name: Deploy to EC2
+        uses: appleboy/scp-action@v0.1.4
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          source: './'
+          target: '/home/ubuntu/shopify-authenticator-app'
+
+      # ✅ Step 5: Restart and Configure Application on EC2
+      - name: Restart Application on EC2
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            # Load NVM and set PATH
+            export NVM_DIR="$HOME/.nvm"
+            [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+            [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"
+            export PATH=$PATH:/home/ubuntu/.nvm/versions/node/v23.7.0/bin
+
+            # Navigate to project directory
+            cd /home/ubuntu/shopify-authenticator-app
+
+            git stash
+            # Prisma Generate and Migrations
+            npm run setup
+            npm run build
+
+            # Start or Restart PM2 Service
+            pm2 describe shopify-authenticator-app > /dev/null 2>&1
+            if [ $? -eq 0 ]; then
+              pm2 restart shopify-authenticator-app
+            else
+              pm2 start npm --name "shopify-authenticator-app" -- start
+            fi
+
+            # Save PM2 configuration
+            pm2 save
