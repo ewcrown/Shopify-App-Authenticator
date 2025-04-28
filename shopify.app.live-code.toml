@@ -1,14 +1,10 @@
 # Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
 
-client_id = "caec388204048b32c199650ad00869b8"
-name = "real-authenticator-v1"
-handle = "real-authenticator-v1"
-application_url = "https://95e9-37-111-157-209.ngrok-free.app"
+client_id = "9adab4f46a68a4ce8bb72e0edafccefb"
+name = "GoHighLevel Integration"
+handle = "gohighlevel-integration-1"
+application_url = "https://authenticluxury.io"
 embedded = true
-
-[build]
-automatically_update_urls_on_dev = true
-include_config_on_deploy = true
 
 [webhooks]
 api_version = "2025-04"
@@ -31,10 +27,14 @@ scopes = "read_products,write_products"
 
 [auth]
 redirect_urls = [
-  "https://95e9-37-111-157-209.ngrok-free.app/auth/callback",
-  "https://95e9-37-111-157-209.ngrok-free.app/auth/shopify/callback",
-  "https://95e9-37-111-157-209.ngrok-free.app/api/auth/callback"
+  "https://authenticluxury.io/auth/callback",
+  "https://authenticluxury.io/auth/shopify/callback",
+  "https://authenticluxury.io/api/auth/callback"
 ]
 
 [pos]
 embedded = false
+
+[build]
+automatically_update_urls_on_dev = true
+include_config_on_deploy = true

@@ -1,67 +1,9 @@
 import { authenticate } from '../shopify.server';
 import { json } from '@remix-run/node';
-import fetch from 'node-fetch';
-import FormData from 'form-data';
 import prisma from "../db.server";
-
-const API_TOKEN = "Fa8eEuMYuRTLl4OMVnf10yztCIYtd5d16ezON540ZbXdampcjLd7IThtoN20";
-
-// Upload image to external API
-const uploadImage = async (imageUrl) => {
-  try {
-    const response = await fetch(imageUrl);
-    const contentType = response.headers.get("content-type");
-
-    if (!response.ok) {
-      throw new Error("Failed to fetch image from URL");
-    }
-
-    const form = new FormData();
-    form.append("image", response.body, {
-      filename: "image.jpg",
-      contentType,
-    });
-
-    const uploadResponse = await fetch("https://customer-api.realauthentication.com/v2/images", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${API_TOKEN}`,
-        ...form.getHeaders(),
-      },
-      body: form,
-    });
-
-    const result = await uploadResponse.json();
-    console.log("✅ Upload response:", result);
-    return result;
-
-  } catch (err) {
-    console.error("❌ Upload failed:", err);
-    throw err;
-  }
-};
-
-// Create order in external API
-const createOrder = async (payload) => {
-  try {
-    const response = await fetch('https://customer-api.realauthentication.com/v2/orders', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${process.env.RAU_API_KEY}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(payload),
-    });
-    const result = await response.json();
-    return result;
-  } catch (err) {
-    console.error("Order creation failed:", err);
-    return null;
-  }
-};
-
-const dbProduct = async () => {}
-
+import { getMetafields } from '../utils/get-metafields';
+import { createOrder } from '../utils/create-order';
+import { uploadImage } from '../utils/upload-image-ra';
 
 export async function action({ request }) {
   try {
@@ -98,27 +40,41 @@ export async function action({ request }) {
           throw new Error('All image uploads failed');
         }
 
+        // Fetch metafields
+        const metafields = await getMetafields(admin, payload.id);
+
+        // Map metafields into key:value object
+        const metafieldsObj = {};
+        for (const { node } of metafields) {
+          if (node?.key?.toLowerCase().startsWith('rau_')) {
+            metafieldsObj[node.key.toLowerCase()] = node.value;
+          }
+        }
+
+        console.log('🎯 Mapped metafields:', metafieldsObj);
+
+        // Create the order payload using metafields
         const orderPayload = {
-          email: 'test@test.com',
+          email: 'test@test.com', // or you can pull customer email if available
           title: payload.title || 'Untitled Product',
-          brand_id: 1,
-          category_id: 1,
+          brand_id: parseInt(metafieldsObj['rau_brand']) || 2,
+          category_id: parseInt(metafieldsObj['rau_category']) || 2,
           documentation_name: "RA",
           web_link: `https://${shop}/products/${payload.handle}`,
-          note: `Imported from Shopify product ${payload.id}`,
-          serial_number: payload.variants?.[0]?.sku || '',
+          note: metafieldsObj['rau_note'] || '',
+          serial_number: metafieldsObj['rau_serialnumber'] || (payload.variants?.[0]?.sku || ''),
           sku: payload.variants?.[0]?.sku || '',
-          images: successfulUploads
+          images: successfulUploads,
         };
 
         console.log('📝 Creating order with:', orderPayload);
-        
+
         // Create order in external system
         const orderResult = await createOrder(orderPayload);
-        
-        console.log('📝 orderResult with:', orderResult);
 
-        // Save order in database
+        console.log('📝 orderResult:', orderResult);
+
+        // Save order into your database
         if (orderResult?.id) {
           const newOrder = await prisma.product.create({
             data: {
@@ -130,6 +86,7 @@ export async function action({ request }) {
           });
 
           console.log('✅ Order saved to DB:', newOrder);
+
           return json({
             success: true,
             orderId: orderResult.id,
