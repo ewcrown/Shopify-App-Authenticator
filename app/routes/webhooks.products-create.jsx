@@ -4,6 +4,7 @@ import prisma from "../db.server";
 import { getMetafields } from '../utils/get-metafields';
 import { createOrder } from '../utils/create-order';
 import { uploadImage } from '../utils/upload-image-ra';
+import { getCategories } from '../utils/get-categories';
 
 export async function action({ request }) {
   try {
@@ -15,30 +16,56 @@ export async function action({ request }) {
 
     switch (topic) {
       case 'PRODUCTS_CREATE': {
-        console.log('📦 Product created:', payload.title);
 
-        const successfulUploads = [];
+        const match = payload.tags.match(/rau_[^,]+/);
+        const rauTag = match ? match[0].replace('rau_', '') : null;
 
-        for (const [index, img] of (payload.images || []).entries()) {
-          try {
-            console.log(`➡️ Uploading image ${index + 1}/${payload.images.length}`);
-            const uploadResult = await uploadImage(img.src);
+        const category = payload.category.name;
+        const brand = rauTag;
 
-            if (uploadResult?.id) {
-              successfulUploads.push({
-                category_image_id: index + 1,
-                image_id: uploadResult.id
-              });
-              console.log('✅ Image uploaded successfully');
-            }
-          } catch (err) {
-            console.error(`⚠️ Image upload failed for ${img.src}:`, err.message);
-          }
-        }
+        const category_response = await getCategories();
 
-        if (successfulUploads.length === 0) {
-          throw new Error('All image uploads failed');
-        }
+        // console.log("=================================================================================================================================================================================>")
+        // console.log("payload.images==>",payload.images)
+        // console.log("=================================================================================================================================================================================>")
+
+        const definedImagesIds = await Promise.all(
+          payload.images.map(async (single) => {
+            const resp = await uploadImage(single.src);
+            return {
+              id: resp.id,
+              desc: single.alt
+            };
+          })
+        );
+
+        const category_select = category_response.find(single => single.name === category);
+        const category_images_array = category_select?.categoryImages || [];
+
+        const images = category_images_array
+        .map((single) => {
+          const matched = definedImagesIds.find(def => def.desc === single.description);
+          return {
+            category_image_id: single.id,
+            image_id: matched?.id || ''
+          };
+        })
+        .filter(item => item.image_id !== '');
+
+        console.log("=================================================================================================================================================================================>")
+        console.log("definedImagesIds==>",definedImagesIds)
+        console.log("=================================================================================================================================================================================>")
+
+        console.log("=================================================================================================================================================================================>")
+        console.log('images ==>', images);
+        console.log("=================================================================================================================================================================================>")
+
+
+        const get_brand = category_select.brands.filter((single)=>{
+          return single.name == brand
+        })
+    
+        console.log('get_brand', get_brand)
 
         // Fetch metafields
         const metafields = await getMetafields(admin, payload.id);
@@ -57,14 +84,14 @@ export async function action({ request }) {
         const orderPayload = {
           email: 'test@test.com', // or you can pull customer email if available
           title: payload.title || 'Untitled Product',
-          brand_id: parseInt(metafieldsObj['rau_brand']) || 2,
-          category_id: parseInt(metafieldsObj['rau_category']) || 2,
+          brand_id: get_brand.id || 2,
+          category_id: category_select.id || 2,
           documentation_name: "RA",
           web_link: `https://${shop}/products/${payload.handle}`,
           note: metafieldsObj['rau_note'] || '',
           serial_number: metafieldsObj['rau_serialnumber'] || (payload.variants?.[0]?.sku || ''),
           sku: payload.variants?.[0]?.sku || '',
-          images: successfulUploads,
+          images: images,
         };
 
         console.log('📝 Creating order with:', orderPayload);
