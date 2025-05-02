@@ -117,7 +117,7 @@ export async function action({ request }) {
           return json({
             success: true,
             orderId: orderResult.id,
-            imageCount: successfulUploads.length
+            imageCount: images.length
           });
         } else {
           throw new Error("Failed to create order in external system");
