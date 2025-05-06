@@ -84,7 +84,7 @@ export async function action({ request }) {
         const orderPayload = {
           email: 'test@test.com', // or you can pull customer email if available
           title: payload.title || 'Untitled Product',
-          brand_id: get_brand.id || 2,
+          brand_id: get_brand[0].id || 2,
           category_id: category_select.id || 2,
           documentation_name: "RA",
           web_link: `https://${shop}/products/${payload.handle}`,
