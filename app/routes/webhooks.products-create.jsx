@@ -5,6 +5,8 @@ import { getMetafields } from '../utils/get-metafields';
 import { createOrder } from '../utils/create-order';
 import { uploadImage } from '../utils/upload-image-ra';
 import { getCategories } from '../utils/get-categories';
+import { getServices } from '../utils/get-services';
+import { addServices } from '../utils/add-service';
 
 export async function action({ request }) {
   try {
@@ -17,13 +19,23 @@ export async function action({ request }) {
     switch (topic) {
       case 'PRODUCTS_CREATE': {
 
-        const match = payload.tags.match(/rau_[^,]+/);
-        const rauTag = match ? match[0].replace('rau_', '') : null;
-
-        const category = payload.category.name;
+        // Brand By Tag
+        const matchTags = payload.tags.match(/rau_[^,]+/);
+        const rauTag = matchTags ? matchTags[0].replace('rau_', '') : null;
         const brand = rauTag;
-
+        
+        // Service By Tag
+        const matchServices = payload.tags.match(/rau_services_[^,]+/g);
+        const rauServices = matchServices  ? matchServices.map(tag => tag.replace('rau_services_', '').trim()) : [];
+        
+        
+        console.log('rauServices==>',rauServices)
+        console.log('brand==>',brand)
+        
+        const category = payload.category.name;
         const category_response = await getCategories();
+        
+        const services_response = await getServices();
 
         // console.log("=================================================================================================================================================================================>")
         // console.log("payload.images==>",payload.images)
@@ -40,7 +52,18 @@ export async function action({ request }) {
         );
 
         const category_select = category_response.find(single => single.name === category);
+        
+        const services_select = services_response.filter(service =>
+          rauServices.includes(service.name)
+        );
+
         const category_images_array = category_select?.categoryImages || [];
+        
+        const service_ids_payload = services_select.map(service => ({
+          service_id: service.id
+        }));
+
+        console.log("service_ids_payload==>",service_ids_payload)
 
         const images = category_images_array
         .map((single) => {
@@ -103,6 +126,9 @@ export async function action({ request }) {
 
         // Save order into your database
         if (orderResult?.id) {
+           const add_services = await addServices(orderResult.id, service_ids_payload);
+          console.log('add_services_status==>', add_services);
+
           const newOrder = await prisma.product.create({
             data: {
               shopifyId: String(payload.id),
