@@ -12,88 +12,48 @@ export async function action({ request }) {
   try {
     const { topic, shop, session, admin, payload } = await authenticate.webhook(request);
 
-    if (!admin) {
-      throw new Response(null, { status: 401 });
-    }
+    if (!admin) throw new Response(null, { status: 401 });
 
     switch (topic) {
       case 'PRODUCTS_CREATE': {
+        const brand = payload.vendor;
+        const category = payload.category?.name;
 
-        // Brand By Tag
-        const matchTags = payload.tags.match(/rau_[^,]+/);
-        const rauTag = matchTags ? matchTags[0].replace('rau_', '') : null;
-        const brand = rauTag;
-        
-        // Service By Tag
-        const matchServices = payload.tags.match(/rau_services_[^,]+/g);
-        const rauServices = matchServices  ? matchServices.map(tag => tag.replace('rau_services_', '').trim()) : [];
-        
-        
-        console.log('rauServices==>',rauServices)
-        console.log('brand==>',brand)
-        
-        const category = payload.category.name;
-        const category_response = await getCategories();
-        
-        const services_response = await getServices();
+        console.log('✅ Received brand:', brand);
+        console.log('✅ Received category:', category);
 
-        // console.log("=================================================================================================================================================================================>")
-        // console.log("payload.images==>",payload.images)
-        // console.log("=================================================================================================================================================================================>")
+        const [category_response, services_response] = await Promise.all([
+          getCategories(),
+          getServices()
+        ]);
+
+        const category_select = category_response.find(c => c.name === category);
+        if (!category_select) throw new Error(`Category "${category}" not found`);
 
         const definedImagesIds = await Promise.all(
           payload.images.map(async (single) => {
             const resp = await uploadImage(single.src);
-            return {
-              id: resp.id,
-              desc: single.alt
-            };
+            return { id: resp.id, desc: single.alt };
           })
         );
 
-        const category_select = category_response.find(single => single.name === category);
-        
-        const services_select = services_response.filter(service =>
-          rauServices.includes(service.name)
-        );
-
-        const category_images_array = category_select?.categoryImages || [];
-        
-        const service_ids_payload = services_select.map(service => ({
-          service_id: service.id
-        }));
-
-        console.log("service_ids_payload==>",service_ids_payload)
+        const category_images_array = category_select.categoryImages || [];
 
         const images = category_images_array
-        .map((single) => {
-          const matched = definedImagesIds.find(def => def.desc === single.description);
-          return {
-            category_image_id: single.id,
-            image_id: matched?.id || ''
-          };
-        })
-        .filter(item => item.image_id !== '');
+          .map((single) => {
+            const matched = definedImagesIds.find(def => def.desc === single.description);
+            return matched ? {
+              category_image_id: single.id,
+              image_id: matched.id
+            } : null;
+          })
+          .filter(Boolean);
 
-        console.log("=================================================================================================================================================================================>")
-        console.log("definedImagesIds==>",definedImagesIds)
-        console.log("=================================================================================================================================================================================>")
+        const get_brand = category_select.brands?.filter(b => b.name === brand) || [];
+        const brand_id = get_brand[0]?.id || 2;
 
-        console.log("=================================================================================================================================================================================>")
-        console.log('images ==>', images);
-        console.log("=================================================================================================================================================================================>")
-
-
-        const get_brand = category_select.brands.filter((single)=>{
-          return single.name == brand
-        })
-    
-        console.log('get_brand', get_brand)
-
-        // Fetch metafields
         const metafields = await getMetafields(admin, payload.id);
 
-        // Map metafields into key:value object
         const metafieldsObj = {};
         for (const { node } of metafields) {
           if (node?.key?.toLowerCase().startsWith('rau_')) {
@@ -101,33 +61,41 @@ export async function action({ request }) {
           }
         }
 
-        console.log('🎯 Mapped metafields:', metafieldsObj);
+        console.log('🧠 Mapped metafields:', metafieldsObj);
 
-        // Create the order payload using metafields
+        const matchServicesRaw = metafieldsObj['rau_services'] || '';
+        const rauServices = matchServicesRaw.includes(',')
+          ? matchServicesRaw.split(',').map(s => s.trim())
+          : [matchServicesRaw.trim()];
+
+        const services_select = services_response.filter(service =>
+          rauServices.includes(service.name)
+        );
+
+        const service_ids_payload = services_select.map(service => ({
+          service_id: service.id
+        }));
+
         const orderPayload = {
-          email: 'test@test.com', // or you can pull customer email if available
+          email: 'test@test.com',
           title: payload.title || 'Untitled Product',
-          brand_id: get_brand[0].id || 2,
+          brand_id,
           category_id: category_select.id || 2,
           documentation_name: "RA",
           web_link: `https://${shop}/products/${payload.handle}`,
           note: metafieldsObj['rau_note'] || '',
           serial_number: metafieldsObj['rau_serialnumber'] || (payload.variants?.[0]?.sku || ''),
           sku: payload.variants?.[0]?.sku || '',
-          images: images,
+          images
         };
 
-        console.log('📝 Creating order with:', orderPayload);
+        console.log('📦 Creating order with:', orderPayload);
 
-        // Create order in external system
         const orderResult = await createOrder(orderPayload);
 
-        console.log('📝 orderResult:', orderResult);
-
-        // Save order into your database
         if (orderResult?.id) {
-           const add_services = await addServices(orderResult.id, service_ids_payload);
-          console.log('add_services_status==>', add_services);
+          const add_services = await addServices(orderResult.id, service_ids_payload);
+          console.log('🔗 Services added:', add_services);
 
           const newOrder = await prisma.product.create({
             data: {
@@ -146,7 +114,7 @@ export async function action({ request }) {
             imageCount: images.length
           });
         } else {
-          throw new Error("Failed to create order in external system");
+          throw new Error("❌ Failed to create order in external system");
         }
       }
 
