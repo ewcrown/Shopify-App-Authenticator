@@ -1,60 +1,81 @@
-// app/routes/index.tsx
-import { useEffect } from "react";
+import React, { useEffect, useState } from "react";
+import { json } from "@remix-run/node";
 import { useFetcher } from "@remix-run/react";
 import {
-  Page, Layout, Text, Card, Button, BlockStack, Box, InlineStack,
+  Page,
+  Layout,
+  Text,
+  Card,
+  Button,
+  BlockStack,
+  Box,
+  InlineStack,
 } from "@shopify/polaris";
 import { TitleBar, useAppBridge } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
 import { syncAllProducts } from "../utils/syncing-product";
 
-export const action = async ({ request }) => {
+export async function action({ request }) {
+  const formData = await request.formData();
+  const intent = formData.get("intent");
+  if (intent !== "syncProducts") return null;
+
+  const cursor = formData.get("cursor") || null;
   try {
     const { admin, session } = await authenticate.admin(request);
-    const formData = await request.formData();
-    const intent = formData.get("intent");
-
-    if (intent === "syncProducts") {
-      const { processed, failed, results } = await syncAllProducts(admin, session);
-      return { success: true, processed, failed, results };
-    }
-
-    if (intent === "checkAuthentication") {
-      return { success: true, message: "Authentication successful!" };
-    }
-
-    return null;
+    const batchSize = 20;
+    const result = await syncAllProducts(admin, session, cursor, batchSize);
+    return json({ success: true, ...result });
   } catch (error) {
     console.error("Sync Action Error:", error);
-    return {
-      success: false,
-      error: error.message || "Unknown error occurred",
-      stack: process.env.NODE_ENV === "development" ? error.stack : undefined,
-    };
+    return json({ success: false, error: error.message }, { status: 500 });
   }
-};
+}
 
 export default function Index() {
   const fetcher = useFetcher();
-  const shopify = useAppBridge();
-  const isLoading = ["loading", "submitting"].includes(fetcher.state) && fetcher.formMethod === "POST";
+  const appBridge = useAppBridge();
+  const [cursor, setCursor] = useState(null);
+  const [processed, setProcessed] = useState(0);
+  const [failed, setFailed] = useState(0);
+  const [running, setRunning] = useState(false);
 
   useEffect(() => {
-    if (fetcher.data?.success && fetcher.data?.message) {
-      shopify.toast.show(fetcher.data.message);
-    } else if (fetcher.data?.success) {
-      shopify.toast.show(
-        `✅ Synced ${fetcher.data.processed} products (${fetcher.data.failed} failed)`
-      );
-    }
+    const data = fetcher.data;
+    if (!data) return;
 
-    if (fetcher.data?.success === false) {
-      shopify.toast.show(`❌ Sync failed: ${fetcher.data.error}`, { isError: true });
-    }
-  }, [fetcher.data, shopify]);
+    if (data.success) {
+      setProcessed(p => p + data.processed);
+      setFailed(f => f + data.failed);
 
-  const syncProducts = () => fetcher.submit({ intent: "syncProducts" }, { method: "POST" });
-  const checkAuthentication = () => fetcher.submit({ intent: "checkAuthentication" }, { method: "POST" });
+      if (data.nextCursor) {
+        setCursor(data.nextCursor);
+        fetcher.submit(
+          { intent: "syncProducts", cursor: data.nextCursor },
+          { method: "post" }
+        );
+      } else {
+        setRunning(false);
+        appBridge.toast.show(
+          `✅ Done! Synced ${processed + data.processed} products (${failed +
+            data.failed} failed)`
+        );
+      }
+    } else {
+      setRunning(false);
+      appBridge.toast.show(`❌ Error: ${data.error}`, { isError: true });
+    }
+  }, [fetcher.data]);
+
+  function startSync() {
+    setCursor(null);
+    setProcessed(0);
+    setFailed(0);
+    setRunning(true);
+    fetcher.submit({ intent: "syncProducts", cursor: "" }, { method: "post" });
+  }
+
+  const isLoading = running && fetcher.state === "submitting";
 
   return (
     <Page>
@@ -64,34 +85,32 @@ export default function Index() {
           <Layout.Section>
             <Card>
               <BlockStack gap="400">
-                <Text as="h2" variant="headingMd">Shopify Sync Panel</Text>
+                <Text as="h2" variant="headingMd">
+                  Shopify Sync Panel
+                </Text>
                 <InlineStack gap="300">
-                  <Button onClick={syncProducts} loading={isLoading} disabled={isLoading}>
+                  <Button onClick={startSync} loading={isLoading} disabled={isLoading}>
                     {isLoading ? "Syncing..." : "Sync Products from Shopify"}
                   </Button>
                 </InlineStack>
 
-                {isLoading && (
+                {running && (
                   <Text variant="bodyMd" tone="subdued">
-                    Syncing products... Please don’t close this window.
+                    Sync in progress… <strong>✅ {processed}</strong> successful,{" "}
+                    <strong>❌ {failed}</strong> failed
                   </Text>
                 )}
 
-                {fetcher.data?.processed && (
+                {!running && processed > 0 && (
                   <Box padding="200">
                     <Text variant="bodyMd">
-                      <strong>Results:</strong><br />
-                      ✅ Successful: {fetcher.data.processed}<br />
-                      ❌ Failed: {fetcher.data.failed}<br />
-                      🔄 Total: {fetcher.data.processed + fetcher.data.failed}
-                    </Text>
-                  </Box>
-                )}
-
-                {fetcher.data?.success === false && (
-                  <Box padding="400" background="bg-surface-critical" borderWidth="025" borderRadius="200" borderColor="border-critical">
-                    <Text variant="bodyMd" tone="critical">
-                      <strong>Error:</strong> {fetcher.data.error}
+                      <strong>Final Results:</strong>
+                      <br />
+                      ✅ Successful: {processed}
+                      <br />
+                      ❌ Failed: {failed}
+                      <br />
+                      🔄 Total: {processed + failed}
                     </Text>
                   </Box>
                 )}
