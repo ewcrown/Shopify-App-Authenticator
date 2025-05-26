@@ -28,7 +28,7 @@ export async function syncAllProducts(admin, session) {
 
     for (const payload of products) {
       const shopifyId = payload.id;
-      const handle = payload.handle;
+      const handle    = payload.handle;
 
       console.log(`🔄 Syncing ${shopifyId} / ${handle}`);
 
@@ -46,8 +46,19 @@ export async function syncAllProducts(admin, session) {
       try {
         await delay(500); // respect rate limit
 
-        // lookup category
-        const categoryName = payload.category?.name;
+        // flatten rau_ metafields into an object
+        const mf = payload.metafields.reduce((acc, { key, value }) => {
+          const k = key.toLowerCase();
+          if (k.startsWith("rau_")) acc[k] = value;
+          return acc;
+        }, {});
+        console.log("🧠 Metafields:", mf);
+
+        // GET CATEGORY FROM metafield "rau_category"
+        const categoryName = mf["rau_category"];
+        if (!categoryName) {
+          throw new Error("Missing rau_category metafield");
+        }
         const categoryEntry = categoryList.find(c => c.name === categoryName);
         if (!categoryEntry) {
           throw new Error(`Category "${categoryName}" not found`);
@@ -68,19 +79,12 @@ export async function syncAllProducts(admin, session) {
           })
           .filter(Boolean);
 
-        // flatten rau_ metafields
-        const mf = payload.metafields.reduce((acc, { key, value }) => {
-          const k = key.toLowerCase();
-          if (k.startsWith("rau_")) acc[k] = value;
-          return acc;
-        }, {});
-
         // brand lookup
         const brandEntry =
           categoryEntry.brands?.find(b => b.name === mf["rau_brand"]) || {};
         const brand_id = brandEntry.id || 2;
 
-        // services payload as [{ service_id: X }, ...]
+        // services payload as [{ service_id: X }, …]
         const rawServices = (mf["rau_services"] || "")
           .split(",")
           .map(s => s.trim())
@@ -88,18 +92,19 @@ export async function syncAllProducts(admin, session) {
         const service_ids_payload = serviceList
           .filter(s => rawServices.includes(s.name))
           .map(s => ({ service_id: s.id }));
+        console.log("🔗 service_ids_payload:", service_ids_payload);
 
         // build & send order
         const orderPayload = {
-          email: mf["rau_email"] || "test@test.com",
-          title: payload.title || "Untitled Product",
+          email:               mf["rau_email"] || "test@test.com",
+          title:               payload.title || "Untitled Product",
           brand_id,
-          category_id: categoryEntry.id,
-          documentation_name: "RA",
-          web_link: `https://${shopDomain}/products/${handle}`,
-          note: mf["rau_note"] || "",
-          serial_number: mf["rau_serialnumber"] || "",
-          sku: mf["rau_sku"] || "",
+          category_id:         categoryEntry.id,
+          documentation_name:  "RA",
+          web_link:            `https://${shopDomain}/products/${handle}`,
+          note:                mf["rau_note"] || "",
+          serial_number:       mf["rau_serialnumber"] || "",
+          sku:                 mf["rau_sku"] || "",
           images,
         };
         console.log("📦 Creating order:", orderPayload);
@@ -114,11 +119,11 @@ export async function syncAllProducts(admin, session) {
         // record success
         await prisma.product.create({
           data: {
-            shopifyId: String(shopifyId),
+            shopifyId:  String(shopifyId),
             handle,
-            title: payload.title,
-            order_id: String(orderResult.id),
-            error_handle: null,
+            title:       payload.title,
+            order_id:    String(orderResult.id),
+            error_handle:null,
           },
         });
 
@@ -132,10 +137,10 @@ export async function syncAllProducts(admin, session) {
           where: { shopifyId },
           update: { error_handle: err.message || "Unknown sync error" },
           create: {
-            shopifyId: String(shopifyId),
+            shopifyId:    String(shopifyId),
             handle,
-            title: payload.title || "Unknown",
-            order_id: "0",
+            title:        payload.title || "Unknown",
+            order_id:     "0",
             error_handle: err.message || "Unknown sync error",
           },
         });
