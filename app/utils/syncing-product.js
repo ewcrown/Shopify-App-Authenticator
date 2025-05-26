@@ -24,41 +24,52 @@ export async function syncAllProducts(admin, session) {
 
   do {
     const { products, nextCursor } =
-      await getPaginatedProductsFromShopify(admin, cursor, 50);
+      await getPaginatedProductsFromShopify(admin, cursor, 250);
 
     for (const payload of products) {
       const shopifyId = payload.id;
-      const handle    = payload.handle;
+      const handle = payload.handle;
 
-      console.log(`🔄 Syncing ${shopifyId} / ${handle}`);
+      console.log(`🔄 Attempting sync for ${shopifyId} / ${handle}`);
 
-      // skip if we've already synced by Shopify ID
-      if (await prisma.product.findUnique({ where: { shopifyId } })) {
-        console.log(`⚠️ shopifyId ${shopifyId} exists, skipping`);
+      // look up existing record
+      const existingById = await prisma.product.findUnique({
+        where: { shopifyId }
+      });
+
+      if (existingById && existingById.error_handle === null) {
+        // already successfully synced → skip
+        console.log(`⚠️ ${shopifyId} already OK, skipping.`);
         continue;
       }
-      // skip if handle already in use
-      if (await prisma.product.findUnique({ where: { handle } })) {
-        console.log(`⚠️ handle "${handle}" exists, skipping`);
+
+      // also guard handle uniqueness, but only skip if handle is assigned to
+      // a record with no error (otherwise we want to retry it)
+      const existingByHandle = await prisma.product.findUnique({
+        where: { handle }
+      });
+      if (
+        existingByHandle &&
+        existingByHandle.error_handle === null &&
+        existingByHandle.shopifyId !== shopifyId
+      ) {
+        console.log(`⚠️ handle "${handle}" used by another product, skipping.`);
         continue;
       }
 
       try {
         await delay(500); // respect rate limit
 
-        // flatten rau_ metafields into an object
+        // flatten rau_ metafields
         const mf = payload.metafields.reduce((acc, { key, value }) => {
           const k = key.toLowerCase();
           if (k.startsWith("rau_")) acc[k] = value;
           return acc;
         }, {});
-        console.log("🧠 Metafields:", mf);
 
-        // GET CATEGORY FROM metafield "rau_category"
+        // category from metafield
         const categoryName = mf["rau_category"];
-        if (!categoryName) {
-          throw new Error("Missing rau_category metafield");
-        }
+        if (!categoryName) throw new Error("Missing rau_category metafield");
         const categoryEntry = categoryList.find(c => c.name === categoryName);
         if (!categoryEntry) {
           throw new Error(`Category "${categoryName}" not found`);
@@ -84,7 +95,7 @@ export async function syncAllProducts(admin, session) {
           categoryEntry.brands?.find(b => b.name === mf["rau_brand"]) || {};
         const brand_id = brandEntry.id || 2;
 
-        // services payload as [{ service_id: X }, …]
+        // services payload array
         const rawServices = (mf["rau_services"] || "")
           .split(",")
           .map(s => s.trim())
@@ -92,19 +103,18 @@ export async function syncAllProducts(admin, session) {
         const service_ids_payload = serviceList
           .filter(s => rawServices.includes(s.name))
           .map(s => ({ service_id: s.id }));
-        console.log("🔗 service_ids_payload:", service_ids_payload);
 
         // build & send order
         const orderPayload = {
-          email:               mf["rau_email"] || "test@test.com",
-          title:               payload.title || "Untitled Product",
+          email: mf["rau_email"] || "test@test.com",
+          title: payload.title || "Untitled Product",
           brand_id,
-          category_id:         categoryEntry.id,
-          documentation_name:  "RA",
-          web_link:            `https://${shopDomain}/products/${handle}`,
-          note:                mf["rau_note"] || "",
-          serial_number:       mf["rau_serialnumber"] || "",
-          sku:                 mf["rau_sku"] || "",
+          category_id: categoryEntry.id,
+          documentation_name: "RA",
+          web_link: `https://${shopDomain}/products/${handle}`,
+          note: mf["rau_note"] || "",
+          serial_number: mf["rau_serialnumber"] || "",
+          sku: mf["rau_sku"] || "",
           images,
         };
         console.log("📦 Creating order:", orderPayload);
@@ -116,14 +126,21 @@ export async function syncAllProducts(admin, session) {
           await addServices(orderResult.id, service_ids_payload);
         }
 
-        // record success
-        await prisma.product.create({
-          data: {
-            shopifyId:  String(shopifyId),
+        // on success: upsert (clears error_handle and writes real order_id)
+        await prisma.product.upsert({
+          where: { shopifyId },
+          update: {
             handle,
-            title:       payload.title,
-            order_id:    String(orderResult.id),
-            error_handle:null,
+            title: payload.title,
+            order_id: String(orderResult.id),
+            error_handle: null,
+          },
+          create: {
+            shopifyId: String(shopifyId),
+            handle,
+            title: payload.title,
+            order_id: String(orderResult.id),
+            error_handle: null,
           },
         });
 
@@ -132,18 +149,24 @@ export async function syncAllProducts(admin, session) {
       } catch (err) {
         console.error(`❌ ${shopifyId}/${handle} failed:`, err.message);
 
-        // record failure
+        // record or update failure
         await prisma.product.upsert({
           where: { shopifyId },
-          update: { error_handle: err.message || "Unknown sync error" },
-          create: {
-            shopifyId:    String(shopifyId),
+          update: {
             handle,
-            title:        payload.title || "Unknown",
-            order_id:     "0",
+            title: payload.title || null,
+            order_id: "0",
+            error_handle: err.message || "Unknown sync error",
+          },
+          create: {
+            shopifyId: String(shopifyId),
+            handle,
+            title: payload.title || "Unknown",
+            order_id: "0",
             error_handle: err.message || "Unknown sync error",
           },
         });
+
         results.push({ shopifyId, success: false, error: err.message });
         failed++;
       }
