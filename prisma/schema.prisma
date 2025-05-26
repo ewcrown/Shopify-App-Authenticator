@@ -14,11 +14,12 @@ datasource db {
 }
 
 model Product {
-  id          String     @id @default(cuid())
-  shopifyId   String     @unique
-  title       String
-  handle      String     @unique
-  order_id    String
+  id           String     @id @default(cuid())
+  shopifyId    String     @unique
+  title        String
+  handle       String     @unique
+  order_id     String
+  error_handle String?
 
   @@index([shopifyId])
   @@index([handle])
