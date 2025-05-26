@@ -16,12 +16,20 @@ export async function action({ request }) {
 
     switch (topic) {
       case 'PRODUCTS_CREATE': {
-        const brand = payload.vendor;
         const category = payload.category?.name;
-
-        console.log('✅ Received brand:', brand);
         console.log('✅ Received category:', category);
 
+        // ✅ Step 1: Prevent duplicates
+        const existing = await prisma.product.findUnique({
+          where: { shopifyId: String(payload.id) }
+        });
+
+        if (existing) {
+          console.log('⚠️ Product already processed, skipping...');
+          return json({ success: true, message: 'Already processed' }, { status: 200 });
+        }
+
+        // ✅ Step 2: Load needed data
         const [category_response, services_response] = await Promise.all([
           getCategories(),
           getServices()
@@ -30,6 +38,7 @@ export async function action({ request }) {
         const category_select = category_response.find(c => c.name === category);
         if (!category_select) throw new Error(`Category "${category}" not found`);
 
+        // ✅ Step 3: Upload and match images
         const definedImagesIds = await Promise.all(
           payload.images.map(async (single) => {
             const resp = await uploadImage(single.src);
@@ -49,11 +58,8 @@ export async function action({ request }) {
           })
           .filter(Boolean);
 
-        const get_brand = category_select.brands?.filter(b => b.name === brand) || [];
-        const brand_id = get_brand[0]?.id || 2;
-
+        // ✅ Step 4: Extract metafields
         const metafields = await getMetafields(admin, payload.id);
-
         const metafieldsObj = {};
         for (const { node } of metafields) {
           if (node?.key?.toLowerCase().startsWith('rau_')) {
@@ -62,6 +68,10 @@ export async function action({ request }) {
         }
 
         console.log('🧠 Mapped metafields:', metafieldsObj);
+
+        const brand = metafieldsObj['rau_brand'] || '';
+        const get_brand = category_select.brands?.filter(b => b.name === brand) || [];
+        const brand_id = get_brand[0]?.id || 2;
 
         const matchServicesRaw = metafieldsObj['rau_services'] || '';
         const rauServices = matchServicesRaw.includes(',')
@@ -76,6 +86,7 @@ export async function action({ request }) {
           service_id: service.id
         }));
 
+        // ✅ Step 5: Create external order
         const orderPayload = {
           email: 'test@test.com',
           title: payload.title || 'Untitled Product',
@@ -93,34 +104,37 @@ export async function action({ request }) {
 
         const orderResult = await createOrder(orderPayload);
 
-        if (orderResult?.id) {
-          const add_services = await addServices(orderResult.id, service_ids_payload);
-          console.log('🔗 Services added:', add_services);
-
-          const newOrder = await prisma.product.create({
-            data: {
-              shopifyId: String(payload.id),
-              title: payload.title,
-              handle: payload.handle,
-              order_id: orderResult.id,
-            },
-          });
-
-          console.log('✅ Order saved to DB:', newOrder);
-
-          return json({
-            success: true,
-            orderId: orderResult.id,
-            imageCount: images.length
-          });
-        } else {
+        if (!orderResult?.id) {
           throw new Error("❌ Failed to create order in external system");
         }
+
+        // ✅ Step 6: Add services and save in DB
+        const add_services = await addServices(orderResult.id, service_ids_payload);
+        console.log('🔗 Services added:', add_services);
+
+        const newOrder = await prisma.product.create({
+          data: {
+            shopifyId: String(payload.id),
+            title: payload.title,
+            handle: payload.handle,
+            order_id: orderResult.id,
+          },
+        });
+
+        console.log('✅ Order saved to DB:', newOrder);
+
+        // ✅ Step 7: Final response to stop retry
+        return json({
+          success: true,
+          orderId: orderResult.id,
+          imageCount: images.length
+        }, { status: 200 });
       }
 
       default:
         return json({ success: false, error: 'Unhandled webhook topic' }, { status: 400 });
     }
+
   } catch (error) {
     console.error('❌ Webhook processing failed:', error);
     return json({

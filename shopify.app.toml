@@ -3,7 +3,7 @@
 client_id = "caec388204048b32c199650ad00869b8"
 name = "real-authenticator-v1"
 handle = "real-authenticator-v1"
-application_url = "https://d9b4-103-125-177-158.ngrok-free.app"
+application_url = "https://0cd8-103-125-177-158.ngrok-free.app"
 embedded = true
 
 [build]
@@ -31,9 +31,9 @@ scopes = "read_products,write_products"
 
 [auth]
 redirect_urls = [
-  "https://d9b4-103-125-177-158.ngrok-free.app/auth/callback",
-  "https://d9b4-103-125-177-158.ngrok-free.app/auth/shopify/callback",
-  "https://d9b4-103-125-177-158.ngrok-free.app/api/auth/callback"
+  "https://0cd8-103-125-177-158.ngrok-free.app/auth/callback",
+  "https://0cd8-103-125-177-158.ngrok-free.app/auth/shopify/callback",
+  "https://0cd8-103-125-177-158.ngrok-free.app/api/auth/callback"
 ]
 
 [pos]
