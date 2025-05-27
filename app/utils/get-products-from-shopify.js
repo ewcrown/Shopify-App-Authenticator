@@ -1,10 +1,3 @@
-/**
- * Fetch one “page” of products via the Shopify Admin GraphQL client
- *
- * @param {object} admin          – the Shopify admin object with `.graphql`
- * @param {string|null} cursor    – the GraphQL `after` cursor
- * @param {number} pageSize       – how many products to fetch
- */
 export async function getPaginatedProductsFromShopify(
   admin,
   cursor = null,
@@ -12,7 +5,13 @@ export async function getPaginatedProductsFromShopify(
 ) {
   const query = `
     query GetProducts($first: Int!, $after: String, $query: String) {
-      products(first: $first, after: $after, query: $query) {
+      products(
+        first: $first,
+        after: $after,
+        query: $query,
+        sortKey: CREATED_AT,
+        reverse: true
+      ) {
         pageInfo {
           hasNextPage
           endCursor
@@ -53,14 +52,13 @@ export async function getPaginatedProductsFromShopify(
   try {
     // admin.graphql is your ready-to-use client
     const response = await admin.graphql(query, { variables });
-    const resp = await response.json()
+    const resp = await response.json();
 
-    const product_object = await resp.data.products
-
+    const product_object = resp.data.products;
     const {
       edges,
       pageInfo: { hasNextPage, endCursor },
-    } = product_object
+    } = product_object;
 
     const products = edges.map(({ node }) => ({
       id: node.id,
