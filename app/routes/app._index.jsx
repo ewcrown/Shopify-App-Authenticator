@@ -23,7 +23,7 @@ export async function action({ request }) {
   const cursor = formData.get("cursor") || null;
   try {
     const { admin, session } = await authenticate.admin(request);
-    const batchSize = 20;
+    const batchSize = 50; // tweak this based on server performance
     const result = await syncAllProducts(admin, session, cursor, batchSize);
     return json({ success: true, ...result });
   } catch (error) {
@@ -45,8 +45,11 @@ export default function Index() {
     if (!data) return;
 
     if (data.success) {
-      setProcessed(p => p + data.processed);
-      setFailed(f => f + data.failed);
+      const totalProcessed = processed + data.processed;
+      const totalFailed = failed + data.failed;
+
+      setProcessed(totalProcessed);
+      setFailed(totalFailed);
 
       if (data.nextCursor) {
         setCursor(data.nextCursor);
@@ -57,8 +60,7 @@ export default function Index() {
       } else {
         setRunning(false);
         appBridge.toast.show(
-          `✅ Done! Synced ${processed + data.processed} products (${failed +
-            data.failed} failed)`
+          `✅ Done! Synced ${totalProcessed} products (${totalFailed} failed)`
         );
       }
     } else {
@@ -68,6 +70,7 @@ export default function Index() {
   }, [fetcher.data]);
 
   function startSync() {
+    if (running) return;
     setCursor(null);
     setProcessed(0);
     setFailed(0);
@@ -96,7 +99,7 @@ export default function Index() {
 
                 {running && (
                   <Text variant="bodyMd" tone="subdued">
-                    Sync in progress… <strong>✅ {processed}</strong> successful,{" "}
+                    Sync in progress… <strong>✅ {processed}</strong> successful,{' '}
                     <strong>❌ {failed}</strong> failed
                   </Text>
                 )}
