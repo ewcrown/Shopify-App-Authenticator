@@ -59,21 +59,22 @@ export async function getPaginatedProductsFromShopify(
       edges,
       pageInfo: { hasNextPage, endCursor },
     } = product_object;
-    console.log("edges==>", edges)
 
-    const products = edges.map(({ node }) => ({
-      id: node.id,
-      title: node.title,
-      handle: node.handle,
-      images: node.images.edges.map((e) => ({
-        src: e.node.originalSrc,
-        alt: e.node.altText,
-      })),
-      metafields: node.metafields.edges.map((e) => ({
-        key: e.node.key,
-        value: e.node.value,
-      })),
-    }));
+    const products = edges
+      .map(({ node }) => ({
+        id: node.id,
+        title: node.title,
+        handle: node.handle,
+        images: node.images.edges.map((e) => ({
+          src: e.node.originalSrc,
+          alt: e.node.altText,
+        })),
+        metafields: node.metafields.edges.map((e) => ({
+          key: e.node.key,
+          value: e.node.value,
+        })),
+      }))
+      .filter((product) => product.images.length > 0);
 
     return {
       products,
