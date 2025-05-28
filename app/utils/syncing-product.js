@@ -81,7 +81,7 @@ export async function syncAllProducts(admin, session, cursor = null, pageSize = 
         web_link:           `https://${session.shop}/products/${handle}`,
         note:               mf["rau_note"] || "",
         serial_number:      mf["rau_serialnumber"] || "",
-        sku:                mf["rau_sku"] || "",
+        sku:                payload.sku || "",
         images,
       };
       console.log("📦 Creating order:", orderPayload);
