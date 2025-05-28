@@ -23,7 +23,7 @@ export async function action({ request }) {
   const cursor = formData.get("cursor") || null;
   try {
     const { admin, session } = await authenticate.admin(request);
-    const batchSize = 50; // tweak this based on server performance
+    const batchSize = 20; // tweak this based on server performance
     const result = await syncAllProducts(admin, session, cursor, batchSize);
     return json({ success: true, ...result });
   } catch (error) {

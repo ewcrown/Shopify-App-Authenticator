@@ -1,7 +1,7 @@
 export async function getPaginatedProductsFromShopify(
   admin,
   cursor = null,
-  pageSize = 50
+  pageSize = 20
 ) {
   const query = `
     query GetProducts($first: Int!, $after: String, $query: String) {
