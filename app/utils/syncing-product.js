@@ -23,7 +23,7 @@ export async function syncAllProducts(admin, session, cursor = null, pageSize = 
   for (const payload of products) {
     productCount++;
     if (productCount % 20 === 0) {
-      console.log('⏳ Waiting 1 minute after 20 products...');
+      console.log(`⏳ Waiting 1 minute after ${batchSize} products...`);
       await delay(60000);
     }
 

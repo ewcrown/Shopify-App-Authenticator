@@ -1,5 +1,3 @@
-// app/routes/index.jsx
-
 import React, { useEffect, useState } from "react";
 import { json } from "@remix-run/node";
 import { useFetcher } from "@remix-run/react";
@@ -17,7 +15,6 @@ import { TitleBar, useAppBridge } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
 import { syncAllProducts } from "../utils/syncing-product";
 
-// --- Action to kick off sync batches ---
 export async function action({ request }) {
   const formData = await request.formData();
   const intent = formData.get("intent");
@@ -26,7 +23,7 @@ export async function action({ request }) {
   const cursor = formData.get("cursor") || null;
   try {
     const { admin, session } = await authenticate.admin(request);
-    const batchSize = 20; // adjust if needed
+    const batchSize = 250;
     const result = await syncAllProducts(admin, session, cursor, batchSize);
     return json({ success: true, ...result });
   } catch (error) {
@@ -35,7 +32,6 @@ export async function action({ request }) {
   }
 }
 
-// --- Page component with sync panel ---
 export default function Index() {
   const fetcher = useFetcher();
   const appBridge = useAppBridge();
@@ -44,7 +40,6 @@ export default function Index() {
   const [failed, setFailed] = useState(0);
   const [running, setRunning] = useState(false);
 
-  // Watch for each batch’s response
   useEffect(() => {
     const data = fetcher.data;
     if (!data) return;
@@ -58,7 +53,6 @@ export default function Index() {
 
       if (data.nextCursor) {
         setCursor(data.nextCursor);
-        // submit next batch
         fetcher.submit(
           { intent: "syncProducts", cursor: data.nextCursor },
           { method: "post" }
@@ -75,7 +69,6 @@ export default function Index() {
     }
   }, [fetcher.data]);
 
-  // Start the sync
   function startSync() {
     if (running) return;
     setCursor(null);
@@ -90,7 +83,6 @@ export default function Index() {
   return (
     <Page>
       <TitleBar title="Admin Dashboard" />
-
       <BlockStack gap="500">
         <Layout>
           <Layout.Section>
@@ -99,27 +91,20 @@ export default function Index() {
                 <Text as="h2" variant="headingMd">
                   Shopify Sync Panel
                 </Text>
-
                 <InlineStack gap="300">
-                  <Button
-                    onClick={startSync}
-                    loading={isLoading}
-                    disabled={isLoading}
-                  >
+                  <Button onClick={startSync} loading={isLoading} disabled={isLoading}>
                     {isLoading ? "Syncing..." : "Sync Products from Shopify"}
                   </Button>
                 </InlineStack>
 
-                {/* In‐progress status */}
                 {running && (
                   <Text variant="bodyMd" tone="subdued">
-                    Sync in progress… <strong>✅ {processed}</strong> successful,{" "}
+                    Sync in progress… <strong>✅ {processed}</strong> successful,{' '}
                     <strong>❌ {failed}</strong> failed
                   </Text>
                 )}
 
-                {/* Final results when done & any processed or failed */}
-                {!running && (processed > 0 || failed > 0) && (
+                {!running && processed > 0 && (
                   <Box padding="200">
                     <Text variant="bodyMd">
                       <strong>Final Results:</strong>
