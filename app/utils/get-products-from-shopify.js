@@ -46,7 +46,7 @@ export async function getPaginatedProductsFromShopify(
   const variables = {
     first: Number(pageSize),
     after: cursor,
-    query: "status:active"
+    query: "status:active tag:'813'"
   };
 
   try {
@@ -59,7 +59,7 @@ export async function getPaginatedProductsFromShopify(
       edges,
       pageInfo: { hasNextPage, endCursor },
     } = product_object;
-    console.log("edges==>",edges)
+    console.log("edges==>", edges)
 
     const products = edges.map(({ node }) => ({
       id: node.id,
