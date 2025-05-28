@@ -10,47 +10,49 @@ const delay = ms => new Promise(r => setTimeout(r, ms));
 
 export async function syncAllProducts(admin, session, cursor = null, pageSize = 20) {
   let processed = 0;
-  let failed    = 0;
+  let failed = 0;
   const results = [];
 
-  const { products, nextCursor } =
-    await getPaginatedProductsFromShopify(admin, cursor, pageSize);
-
+  const { products, nextCursor } = await getPaginatedProductsFromShopify(admin, cursor, pageSize);
   const [categoryList, serviceList] = await Promise.all([
     getCategories(),
     getServices(),
   ]);
 
+  let productCount = 0;
   for (const payload of products) {
-    const shopifyId = payload.id;
-    const handle    = payload.handle;
+    productCount++;
+    if (productCount % 20 === 0) {
+      console.log('⏳ Waiting 1 minute after 20 products...');
+      await delay(60000);
+    }
 
-    // skip if last run succeeded
+    const shopifyId = payload.id;
+    const handle = payload.handle;
+
     const existing = await prisma.product.findUnique({ where: { shopifyId } });
     if (existing && existing.error_handle === null) continue;
 
     try {
       await delay(300);
 
-      // flatten rau_ metafields
       const mf = payload.metafields.reduce((acc, { key, value }) => {
         const k = key.toLowerCase();
         if (k.startsWith("rau_")) acc[k] = value;
         return acc;
       }, {});
 
-      // category & brand lookup
       const categoryEntry = categoryList.find(c => c.name === mf["rau_category"]);
-      if (!categoryEntry) throw new Error(`Category "${mf["rau_category"]}" not found`);
+      if (!categoryEntry) throw new Error(`Category \"${mf["rau_category"]}\" not found`);
       const brandEntry = categoryEntry.brands.find(b => b.name === mf["rau_brand"]) || {};
       const brand_id = brandEntry.id || 2;
 
-      // upload & match images
       const uploads = await Promise.all(
         payload.images.map(({ src, alt }) =>
           uploadImage(src).then(r => ({ id: r.id, desc: alt }))
         )
       );
+
       const images = (categoryEntry.categoryImages || [])
         .map(({ id: category_image_id, description }) => {
           const m = uploads.find(u => u.desc === description);
@@ -58,30 +60,27 @@ export async function syncAllProducts(admin, session, cursor = null, pageSize = 
         })
         .filter(Boolean);
 
-      // **NEW**: if no images matched, skip entirely
       if (images.length === 0) {
         console.log(`⚠️ Skipping ${shopifyId}/${handle} — no matching images`);
         continue;
       }
 
-      // services payload
       const rawServices = (mf["rau_services"] || "")
         .split(",").map(s => s.trim()).filter(Boolean);
       const service_ids_payload = serviceList
         .filter(s => rawServices.includes(s.name))
         .map(s => ({ service_id: s.id }));
 
-      // build & send order
       const orderPayload = {
-        email:              mf["rau_email"] || "test@test.com",
-        title:              payload.title || "Untitled",
+        email: mf["rau_email"] || "test@test.com",
+        title: payload.title || "Untitled",
         brand_id,
-        category_id:        categoryEntry.id,
+        category_id: categoryEntry.id,
         documentation_name: "RA",
-        web_link:           `https://${session.shop}/products/${handle}`,
-        note:               mf["rau_note"] || "",
-        serial_number:      mf["rau_serialnumber"] || "",
-        sku:                payload.sku || "",
+        web_link: `https://${session.shop}/products/${handle}`,
+        note: mf["rau_note"] || "",
+        serial_number: mf["rau_serialnumber"] || "",
+        sku: payload.sku || "",
         images,
       };
       console.log("📦 Creating order:", orderPayload);
@@ -93,40 +92,39 @@ export async function syncAllProducts(admin, session, cursor = null, pageSize = 
         await addServices(orderResult.id, service_ids_payload);
       }
 
-      // record success
       await prisma.product.upsert({
         where: { shopifyId },
         update: {
           handle,
-          title:        payload.title,
-          order_id:     String(orderResult.id),
+          title: payload.title,
+          order_id: String(orderResult.id),
           error_handle: null,
         },
         create: {
-          shopifyId:    String(shopifyId),
+          shopifyId: String(shopifyId),
           handle,
-          title:        payload.title,
-          order_id:     String(orderResult.id),
+          title: payload.title,
+          order_id: String(orderResult.id),
           error_handle: null,
         },
       });
+
       processed++;
       results.push({ shopifyId, success: true });
     } catch (err) {
-      // record failure
       await prisma.product.upsert({
         where: { shopifyId },
         update: {
           handle,
-          title:        payload.title || null,
-          order_id:     "0",
+          title: payload.title || null,
+          order_id: "0",
           error_handle: err.message || "Unknown sync error",
         },
         create: {
-          shopifyId:    String(shopifyId),
+          shopifyId: String(shopifyId),
           handle,
-          title:        payload.title || "Unknown",
-          order_id:     "0",
+          title: payload.title || "Unknown",
+          order_id: "0",
           error_handle: err.message || "Unknown sync error",
         },
       });
