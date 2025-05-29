@@ -56,12 +56,6 @@ export async function syncAllProducts(admin, session, cursor = null, pageSize = 
           )
       );
 
-      console.log(`🔍 Uploading images with ALT tags for ${handle}:`, 
-        payload.images
-          .filter(({ alt }) => alt && alt.trim() !== "")
-          .map(({ alt }) => alt.trim())
-      );
-
       const images = (categoryEntry.categoryImages || []).map(({ id: category_image_id, description }) => {
         const m = uploads.find(u => u.desc === description);
           return m ? { category_image_id, image_id: m.id } : null;
