@@ -43,22 +43,29 @@ export async function syncAllProducts(admin, session, cursor = null, pageSize = 
       }, {});
 
       const categoryEntry = categoryList.find(c => c.name === mf["rau_category"]);
+
       if (!categoryEntry) throw new Error(`Category \"${mf["rau_category"]}\" not found`);
       const brandEntry = categoryEntry.brands.find(b => b.name === mf["rau_brand"]) || {};
       const brand_id = brandEntry.id || 2;
 
       const uploads = await Promise.all(
-        payload.images.map(({ src, alt }) =>
-          uploadImage(src).then(r => ({ id: r.id, desc: alt }))
-        )
+        payload.images
+          .filter(({ alt }) => alt && alt.trim() !== "")
+          .map(({ src, alt }) =>
+            uploadImage(src).then(r => ({ id: r.id, desc: alt.trim() }))
+          )
       );
 
-      const images = (categoryEntry.categoryImages || [])
-        .map(({ id: category_image_id, description }) => {
-          const m = uploads.find(u => u.desc === description);
+      console.log(`🔍 Uploading images with ALT tags for ${handle}:`, 
+        payload.images
+          .filter(({ alt }) => alt && alt.trim() !== "")
+          .map(({ alt }) => alt.trim())
+      );
+
+      const images = (categoryEntry.categoryImages || []).map(({ id: category_image_id, description }) => {
+        const m = uploads.find(u => u.desc === description);
           return m ? { category_image_id, image_id: m.id } : null;
-        })
-        .filter(Boolean);
+        }).filter(Boolean);
 
       if (images.length === 0) {
         console.log(`⚠️ Skipping ${shopifyId}/${handle} — no matching images`);
@@ -72,7 +79,7 @@ export async function syncAllProducts(admin, session, cursor = null, pageSize = 
         .map(s => ({ service_id: s.id }));
 
       const orderPayload = {
-        email: mf["rau_email"] || "test@test.com",
+        email: "Trevor@designernulimitedllc.com",
         title: payload.title || "Untitled",
         brand_id,
         category_id: categoryEntry.id,
