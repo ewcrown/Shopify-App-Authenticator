@@ -21,6 +21,13 @@ export async function getPaginatedProductsFromShopify(
             id
             title
             handle
+            variants(first: 1) {
+              edges {
+                node {
+                  sku
+                }
+              }
+            }
             images(first: 10) {
               edges {
                 node {
@@ -69,6 +76,7 @@ export async function getPaginatedProductsFromShopify(
           src: e.node.originalSrc,
           alt: e.node.altText,
         })),
+        sku: node.variants.edges[0]?.node?.sku || null,
         metafields: node.metafields.edges.map((e) => ({
           key: e.node.key,
           value: e.node.value,

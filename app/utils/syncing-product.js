@@ -1,7 +1,9 @@
 import prisma from "../db.server";
 import { addServices } from "./add-service";
+import { createMetafield } from "./create-metafileds";
 import { createOrder } from "./create-order";
 import { getCategories } from "./get-categories";
+import { getMetafields } from "./get-metafields";
 import { getPaginatedProductsFromShopify } from "./get-products-from-shopify";
 import { getServices } from "./get-services";
 import { uploadImage } from "./upload-image-ra";
@@ -43,8 +45,7 @@ export async function syncAllProducts(admin, session, cursor = null, pageSize = 
       }, {});
 
       const categoryEntry = categoryList.find(c => c.name === mf["rau_category"]);
-
-      if (!categoryEntry) throw new Error(`Category \"${mf["rau_category"]}\" not found`);
+      if (!categoryEntry) throw new Error(`Category "${mf["rau_category"]}" not found`);
       const brandEntry = categoryEntry.brands.find(b => b.name === mf["rau_brand"]) || {};
       const brand_id = brandEntry.id || 2;
 
@@ -55,11 +56,10 @@ export async function syncAllProducts(admin, session, cursor = null, pageSize = 
             uploadImage(src).then(r => ({ id: r.id, desc: alt.trim() }))
           )
       );
-
       const images = (categoryEntry.categoryImages || []).map(({ id: category_image_id, description }) => {
         const m = uploads.find(u => u.desc === description);
-          return m ? { category_image_id, image_id: m.id } : null;
-        }).filter(Boolean);
+        return m ? { category_image_id, image_id: m.id } : null;
+      }).filter(Boolean);
 
       if (images.length === 0) {
         console.log(`⚠️ Skipping ${shopifyId}/${handle} — no matching images`);
@@ -91,6 +91,38 @@ export async function syncAllProducts(admin, session, cursor = null, pageSize = 
 
       if (service_ids_payload.length) {
         await addServices(orderResult.id, service_ids_payload);
+      }
+
+      try {
+        const metafields = await getMetafields(admin, shopifyId);
+
+        const existingMfMap = {};
+        for (const { node } of metafields) {
+          const key = node.key.toLowerCase();
+          if (key.startsWith("rau_")) {
+            existingMfMap[key] = {
+              id: node.id,
+              value: node.value
+            };
+          }
+        }
+
+        const updates = {
+          rau_order_id: orderResult.id,
+          rau_progress: "Completed",
+          rau_uploadstatus: "Uploaded",
+          rau_authenticationstatus: orderResult.statusDescription || "",
+          rau_note: orderResult.note || "",
+          rau_serialnumber: orderResult.serialNumber || ""
+        };
+
+        for (const [key, newVal] of Object.entries(updates)) {
+          await createMetafield(admin, shopifyId, key, String(newVal), "single_line_text_field", "custom");
+        }
+
+        console.log(`✅ Created/Updated rau_ metafields for product ${shopifyId}.`);
+      } catch (mfErr) {
+        console.warn(`⚠️ Could not create/update rau_ metafields for ${shopifyId}: ${mfErr.message}`);
       }
 
       await prisma.product.upsert({
