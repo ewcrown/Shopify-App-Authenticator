@@ -28,7 +28,7 @@ export async function getPaginatedProductsFromShopify(
                 }
               }
             }
-            images(first: 10) {
+            images(first: 50) {
               edges {
                 node {
                   originalSrc
@@ -36,7 +36,7 @@ export async function getPaginatedProductsFromShopify(
                 }
               }
             }
-            metafields(first: 10, namespace: "custom") {
+            metafields(first: 20, namespace: "custom") {
               edges {
                 node {
                   key
@@ -53,7 +53,7 @@ export async function getPaginatedProductsFromShopify(
   const variables = {
     first: Number(pageSize),
     after: cursor,
-    query: "status:active tag:'813'"
+    query: "status:active tag:'814'"
   };
 
   try {

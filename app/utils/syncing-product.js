@@ -50,26 +50,29 @@ export async function syncAllProducts(admin, session, cursor = null, pageSize = 
       const brand_id = brandEntry.id || 2;
 
       const uploads = await Promise.all(
-        payload.images
-          .filter(({ alt }) => alt && alt.trim() !== "")
-          .map(({ src, alt }) =>
-            uploadImage(src).then(r => ({ id: r.id, desc: alt.trim() }))
-          )
+        payload.images.map(({ src, alt }) =>
+          uploadImage(src).then(r => ({
+            id: r.id,
+            desc: alt?.trim() || null,
+          }))
+        )
       );
 
       const images = [];
 
       for (const { id, desc } of uploads) {
-        const matched = (categoryEntry.categoryImages || []).find(c => c.description === desc);
-        if (matched) {
-          images.push({ category_image_id: matched.id, image_id: id });
-        } else {
-          images.push({ image_id: id });
+        if (desc) {
+          const matched = (categoryEntry.categoryImages || []).find(c => c.description === desc);
+          if (matched) {
+            images.push({ category_image_id: matched.id, image_id: id });
+            continue;
+          }
         }
+        images.push({ image_id: id });
       }
 
       if (images.length === 0) {
-        console.log(`\u26A0\uFE0F Skipping ${shopifyId}/${handle} \u2014 no uploaded images`);
+        console.log(`⚠️ Skipping ${shopifyId}/${handle} — no uploaded images`);
         continue;
       }
 
