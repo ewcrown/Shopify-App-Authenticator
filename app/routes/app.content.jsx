@@ -1,37 +1,45 @@
 // app/routes/products.jsx
 
 import { json } from "@remix-run/node";
-import { useLoaderData, useSearchParams, Form } from "@remix-run/react";
+import { useLoaderData } from "@remix-run/react";
 import prisma from "../db.server";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 
-export async function loader({ request }) {
-  const url = new URL(request.url);
-  const sort = url.searchParams.get("sort") || "asc";
-
-  const orderBy =
-    sort === "latest"
-      ? { createdAt: "desc" }
-      : { title: "asc" };
-
-  const products = await prisma.product.findMany({
-    orderBy,
-  });
-
+export async function loader() {
+  // Fetch all products without any sort key—React will sort them on the client.
+  const products = await prisma.product.findMany();
   return json({ products });
 }
 
 export default function ProductsPage() {
   const { products } = useLoaderData();
-  const [searchParams] = useSearchParams();
+  const [sort, setSort] = useState("asc"); // "asc" = A–Z, "latest" = newest first
   const [activeTab, setActiveTab] = useState("success");
 
-  const success = products.filter((p) => !p.error_handle);
-  const failed = products.filter((p) => p.error_handle);
+  // 1) Create a memoized, sorted array of all products:
+  const sortedProducts = useMemo(() => {
+    // Copy the array so we don’t mutate the loader data directly
+    const copy = [...products];
+
+    if (sort === "latest") {
+      // Sort by createdAt descending (newest first)
+      return copy.sort((a, b) => {
+        return new Date(b.createdAt) - new Date(a.createdAt);
+      });
+    }
+
+    // Otherwise sort by title A→Z
+    return copy.sort((a, b) => {
+      return a.title.localeCompare(b.title);
+    });
+  }, [products, sort]);
+
+  // 2) Split into “success” vs. “failed” based on error_handle
+  const success = sortedProducts.filter((p) => !p.error_handle);
+  const failed = sortedProducts.filter((p) => Boolean(p.error_handle));
 
   return (
     <>
-      {/* Inline styles to mimic Polaris */}
       <style>{`
         .product-page { padding: 24px; font-family: ShopifySans, sans-serif; }
         .product-title { font-size: 20px; font-weight: 600; margin-bottom: 16px; color: #212B36; }
@@ -90,20 +98,17 @@ export default function ProductsPage() {
       <main className="product-page">
         <h1 className="product-title">Products</h1>
 
-        {/* Sort dropdown */}
-        <Form method="get">
-          <select
-            name="sort"
-            defaultValue={searchParams.get("sort") || "asc"}
-            className="sort-select"
-            onChange={(e) => e.currentTarget.form.submit()}
-          >
-            <option value="asc">Sort by A–Z</option>
-            <option value="latest">Sort by Latest</option>
-          </select>
-        </Form>
+        {/* Sort-by dropdown (client-only) */}
+        <select
+          className="sort-select"
+          value={sort}
+          onChange={(e) => setSort(e.target.value)}
+        >
+          <option value="asc">Sort by A–Z</option>
+          <option value="latest">Sort by Latest</option>
+        </select>
 
-        {/* Tabs */}
+        {/* Active vs. Failed Tabs */}
         <nav className="tabs">
           <button
             className={`tab${activeTab === "success" ? " active" : ""}`}
@@ -129,6 +134,7 @@ export default function ProductsPage() {
                 <th>Handle</th>
                 <th>Order ID</th>
                 <th>Error</th>
+                <th>Created At</th>
               </tr>
             </thead>
             <tbody>
@@ -141,6 +147,7 @@ export default function ProductsPage() {
                   <td style={{ color: p.error_handle ? "#C43E1C" : "inherit" }}>
                     {p.error_handle || "-"}
                   </td>
+                  <td>{new Date(p.createdAt).toLocaleDateString()}</td>
                 </tr>
               ))}
             </tbody>

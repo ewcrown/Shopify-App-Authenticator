@@ -20,6 +20,7 @@ model Product {
   handle       String     @unique
   order_id     String
   error_handle String?
+  createdAt    DateTime   @default(now())
 
   @@index([shopifyId])
   @@index([handle])
