@@ -53,7 +53,7 @@ export async function getPaginatedProductsFromShopify(
   const variables = {
     first: Number(pageSize),
     after: cursor,
-    query: "status:active tag:'813'"
+    query: "status:active tag:'814'"
   };
 
   try {

@@ -1,23 +1,33 @@
 // app/routes/products.jsx
 
 import { json } from "@remix-run/node";
-import { useLoaderData } from "@remix-run/react";
+import { useLoaderData, useSearchParams, Form } from "@remix-run/react";
 import prisma from "../db.server";
 import { useState } from "react";
 
-export async function loader() {
+export async function loader({ request }) {
+  const url = new URL(request.url);
+  const sort = url.searchParams.get("sort") || "asc";
+
+  const orderBy =
+    sort === "latest"
+      ? { createdAt: "desc" }
+      : { title: "asc" };
+
   const products = await prisma.product.findMany({
-    orderBy: { title: "asc" },
+    orderBy,
   });
+
   return json({ products });
 }
 
 export default function ProductsPage() {
   const { products } = useLoaderData();
+  const [searchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState("success");
 
   const success = products.filter((p) => !p.error_handle);
-  const failed  = products.filter((p) =>  p.error_handle);
+  const failed = products.filter((p) => p.error_handle);
 
   return (
     <>
@@ -40,6 +50,13 @@ export default function ProductsPage() {
           background: #C4DFFF;
           color: #0065FF;
           border-color: #0065FF;
+        }
+        .sort-select {
+          margin-bottom: 16px;
+          font-size: 14px;
+          padding: 8px 12px;
+          border: 1px solid #ccc;
+          border-radius: 4px;
         }
         .table-wrapper {
           overflow-x: auto;
@@ -72,6 +89,19 @@ export default function ProductsPage() {
 
       <main className="product-page">
         <h1 className="product-title">Products</h1>
+
+        {/* Sort dropdown */}
+        <Form method="get">
+          <select
+            name="sort"
+            defaultValue={searchParams.get("sort") || "asc"}
+            className="sort-select"
+            onChange={(e) => e.currentTarget.form.submit()}
+          >
+            <option value="asc">Sort by A–Z</option>
+            <option value="latest">Sort by Latest</option>
+          </select>
+        </Form>
 
         {/* Tabs */}
         <nav className="tabs">

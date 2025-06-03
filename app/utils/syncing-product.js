@@ -25,7 +25,7 @@ export async function syncAllProducts(admin, session, cursor = null, pageSize = 
   for (const payload of products) {
     productCount++;
     if (productCount % pageSize === 0) {
-      console.log(`⏳ Waiting 1 minute after ${pageSize} products...`);
+      console.log(`\u23F3 Waiting 1 minute after ${pageSize} products...`);
       await delay(60000);
     }
 
@@ -45,7 +45,7 @@ export async function syncAllProducts(admin, session, cursor = null, pageSize = 
       }, {});
 
       const categoryEntry = categoryList.find(c => c.name === mf["rau_category"]);
-      if (!categoryEntry) throw new Error(`Category "${mf["rau_category"]}" not found`);
+      if (!categoryEntry) throw new Error(`Category \"${mf["rau_category"]}\" not found`);
       const brandEntry = categoryEntry.brands.find(b => b.name === mf["rau_brand"]) || {};
       const brand_id = brandEntry.id || 2;
 
@@ -56,13 +56,20 @@ export async function syncAllProducts(admin, session, cursor = null, pageSize = 
             uploadImage(src).then(r => ({ id: r.id, desc: alt.trim() }))
           )
       );
-      const images = (categoryEntry.categoryImages || []).map(({ id: category_image_id, description }) => {
-        const m = uploads.find(u => u.desc === description);
-        return m ? { category_image_id, image_id: m.id } : null;
-      }).filter(Boolean);
+
+      const images = [];
+
+      for (const { id, desc } of uploads) {
+        const matched = (categoryEntry.categoryImages || []).find(c => c.description === desc);
+        if (matched) {
+          images.push({ category_image_id: matched.id, image_id: id });
+        } else {
+          images.push({ image_id: id });
+        }
+      }
 
       if (images.length === 0) {
-        console.log(`⚠️ Skipping ${shopifyId}/${handle} — no matching images`);
+        console.log(`\u26A0\uFE0F Skipping ${shopifyId}/${handle} \u2014 no uploaded images`);
         continue;
       }
 
@@ -84,7 +91,7 @@ export async function syncAllProducts(admin, session, cursor = null, pageSize = 
         sku: payload.sku || "",
         images,
       };
-      console.log("📦 Creating order:", orderPayload);
+      console.log("\ud83d\udce6 Creating order:", orderPayload);
 
       const orderResult = await createOrder(orderPayload);
       if (!orderResult?.id) throw new Error("Order creation failed");
@@ -120,9 +127,9 @@ export async function syncAllProducts(admin, session, cursor = null, pageSize = 
           await createMetafield(admin, shopifyId, key, String(newVal), "single_line_text_field", "custom");
         }
 
-        console.log(`✅ Created/Updated rau_ metafields for product ${shopifyId}.`);
+        console.log(`\u2705 Created/Updated rau_ metafields for product ${shopifyId}.`);
       } catch (mfErr) {
-        console.warn(`⚠️ Could not create/update rau_ metafields for ${shopifyId}: ${mfErr.message}`);
+        console.warn(`\u26A0\uFE0F Could not create/update rau_ metafields for ${shopifyId}: ${mfErr.message}`);
       }
 
       await prisma.product.upsert({
