@@ -1,12 +1,9 @@
-// app/routes/products.jsx
-
 import { json } from "@remix-run/node";
 import { useLoaderData } from "@remix-run/react";
 import prisma from "../db.server";
 import { useState, useMemo } from "react";
 
 export async function loader() {
-  // Fetch all products without any sort key—React will sort them on the client.
   const products = await prisma.product.findMany();
   return json({ products });
 }
@@ -15,28 +12,37 @@ export default function ProductsPage() {
   const { products } = useLoaderData();
   const [sort, setSort] = useState("asc"); // "asc" = A–Z, "latest" = newest first
   const [activeTab, setActiveTab] = useState("success");
+  const [selectedTag, setSelectedTag] = useState("all");
 
-  // 1) Create a memoized, sorted array of all products:
-  const sortedProducts = useMemo(() => {
-    // Copy the array so we don’t mutate the loader data directly
-    const copy = [...products];
-
-    if (sort === "latest") {
-      // Sort by createdAt descending (newest first)
-      return copy.sort((a, b) => {
-        return new Date(b.createdAt) - new Date(a.createdAt);
-      });
-    }
-
-    // Otherwise sort by title A→Z
-    return copy.sort((a, b) => {
-      return a.title.localeCompare(b.title);
+  // Unique tag list for filter
+  const allTags = useMemo(() => {
+    const tagSet = new Set();
+    products.forEach((p) => {
+      if (p.tags) {
+        p.tags.split(",").forEach((tag) => tagSet.add(tag.trim()));
+      }
     });
+    return Array.from(tagSet).sort();
+  }, [products]);
+
+  // Sort products
+  const sortedProducts = useMemo(() => {
+    const copy = [...products];
+    if (sort === "latest") {
+      return copy.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    }
+    return copy.sort((a, b) => a.title.localeCompare(b.title));
   }, [products, sort]);
 
-  // 2) Split into “success” vs. “failed” based on error_handle
+  // Split by status
   const success = sortedProducts.filter((p) => !p.error_handle);
   const failed = sortedProducts.filter((p) => Boolean(p.error_handle));
+
+  // Apply tag filter
+  const filtered = (activeTab === "success" ? success : failed).filter((p) => {
+    if (selectedTag === "all") return true;
+    return p.tags?.split(",").map((t) => t.trim()).includes(selectedTag);
+  });
 
   return (
     <>
@@ -98,7 +104,7 @@ export default function ProductsPage() {
       <main className="product-page">
         <h1 className="product-title">Products</h1>
 
-        {/* Sort-by dropdown (client-only) */}
+        {/* Sort Dropdown */}
         <select
           className="sort-select"
           value={sort}
@@ -108,7 +114,21 @@ export default function ProductsPage() {
           <option value="latest">Sort by Latest</option>
         </select>
 
-        {/* Active vs. Failed Tabs */}
+        {/* Tag Filter Dropdown */}
+        <select
+          className="sort-select"
+          value={selectedTag}
+          onChange={(e) => setSelectedTag(e.target.value)}
+        >
+          <option value="all">All Tags</option>
+          {allTags.map((tag) => (
+            <option key={tag} value={tag}>
+              {tag}
+            </option>
+          ))}
+        </select>
+
+        {/* Tabs */}
         <nav className="tabs">
           <button
             className={`tab${activeTab === "success" ? " active" : ""}`}
@@ -124,7 +144,7 @@ export default function ProductsPage() {
           </button>
         </nav>
 
-        {/* Table */}
+        {/* Product Table */}
         <div className="table-wrapper">
           <table className="data-table">
             <thead>
@@ -133,17 +153,19 @@ export default function ProductsPage() {
                 <th>Title</th>
                 <th>Handle</th>
                 <th>Order ID</th>
+                <th>Tags</th>
                 <th>Error</th>
                 <th>Created At</th>
               </tr>
             </thead>
             <tbody>
-              {(activeTab === "success" ? success : failed).map((p) => (
+              {filtered.map((p) => (
                 <tr key={p.id}>
                   <td>{p.shopifyId}</td>
                   <td>{p.title}</td>
                   <td>{p.handle}</td>
                   <td>{p.order_id || "-"}</td>
+                  <td>{p.tags ? p.tags.split(",").map(tag => tag.trim()).join(", ") : "-"}</td>
                   <td style={{ color: p.error_handle ? "#C43E1C" : "inherit" }}>
                     {p.error_handle || "-"}
                   </td>

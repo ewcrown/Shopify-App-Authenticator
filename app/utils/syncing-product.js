@@ -1,24 +1,27 @@
 import prisma from "../db.server";
 import { addServices } from "./add-service";
-import { createMetafield } from "./create-metafileds";
 import { createOrder } from "./create-order";
+import { createMetafield } from "./create-metafileds";
 import { getCategories } from "./get-categories";
 import { getMetafields } from "./get-metafields";
 import { getPaginatedProductsFromShopify } from "./get-products-from-shopify";
 import { getServices } from "./get-services";
 import { uploadImage } from "./upload-image-ra";
+import { uploadImagesToShopifyProduct } from "./upload-images-to-shopify";
 
 const delay = ms => new Promise(r => setTimeout(r, ms));
 
-export async function syncAllProducts(admin, session, cursor = null, pageSize = 20) {
+export async function syncAllProducts(admin, session, cursor = null, pageSize = 20, options) {
+  const { apiKey, tag } = options;
+
   let processed = 0;
   let failed = 0;
   const results = [];
 
-  const { products, nextCursor } = await getPaginatedProductsFromShopify(admin, cursor, pageSize);
+  const { products, nextCursor } = await getPaginatedProductsFromShopify(admin, cursor, pageSize, tag);
   const [categoryList, serviceList] = await Promise.all([
-    getCategories(),
-    getServices(),
+    getCategories(apiKey),
+    getServices(apiKey),
   ]);
 
   let productCount = 0;
@@ -29,6 +32,7 @@ export async function syncAllProducts(admin, session, cursor = null, pageSize = 
       await delay(60000);
     }
 
+    const tags = payload.tags.join(",")
     const shopifyId = payload.id;
     const handle = payload.handle;
 
@@ -51,7 +55,7 @@ export async function syncAllProducts(admin, session, cursor = null, pageSize = 
 
       const uploads = await Promise.all(
         payload.images.map(({ src, alt }) =>
-          uploadImage(src).then(r => ({
+          uploadImage(src, apiKey).then(r => ({
             id: r.id,
             desc: alt?.trim() || null,
           }))
@@ -94,13 +98,23 @@ export async function syncAllProducts(admin, session, cursor = null, pageSize = 
         sku: payload.sku || "",
         images,
       };
-      console.log("\ud83d\udce6 Creating order:", orderPayload);
+      console.log("Creating order:", orderPayload);
 
-      const orderResult = await createOrder(orderPayload);
+      const orderResult = await createOrder(orderPayload, apiKey);
+      
       if (!orderResult?.id) throw new Error("Order creation failed");
 
+      const uploadedUrls = (orderResult.images || [])
+        .map(img => img.image?.url)
+        .filter(Boolean);
+
+      if (uploadedUrls.length > 0) {
+
+        await uploadImagesToShopifyProduct(admin, shopifyId, uploadedUrls);
+      }
+
       if (service_ids_payload.length) {
-        await addServices(orderResult.id, service_ids_payload);
+        await addServices(orderResult.id, service_ids_payload, apiKey);
       }
 
       try {
@@ -123,7 +137,8 @@ export async function syncAllProducts(admin, session, cursor = null, pageSize = 
           rau_uploadstatus: "Uploaded",
           rau_authenticationstatus: orderResult.statusDescription || "",
           rau_note: orderResult.note || "",
-          rau_serialnumber: orderResult.serialNumber || ""
+          rau_serialnumber: orderResult.serialNumber || "",
+          rau_order_link: `https://app.realauthentication.com/my-orders/${orderResult.id}`
         };
 
         for (const [key, newVal] of Object.entries(updates)) {
@@ -140,11 +155,13 @@ export async function syncAllProducts(admin, session, cursor = null, pageSize = 
         update: {
           handle,
           title: payload.title,
+          tags: tags,
           order_id: String(orderResult.id),
           error_handle: null,
         },
         create: {
           shopifyId: String(shopifyId),
+          tags: tags,
           handle,
           title: payload.title,
           order_id: String(orderResult.id),
@@ -159,6 +176,7 @@ export async function syncAllProducts(admin, session, cursor = null, pageSize = 
         where: { shopifyId },
         update: {
           handle,
+          tags: tags,
           title: payload.title || null,
           order_id: "0",
           error_handle: err.message || "Unknown sync error",
@@ -166,6 +184,7 @@ export async function syncAllProducts(admin, session, cursor = null, pageSize = 
         create: {
           shopifyId: String(shopifyId),
           handle,
+          tags: tags,
           title: payload.title || "Unknown",
           order_id: "0",
           error_handle: err.message || "Unknown sync error",

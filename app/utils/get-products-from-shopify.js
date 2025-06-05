@@ -1,7 +1,8 @@
 export async function getPaginatedProductsFromShopify(
   admin,
   cursor = null,
-  pageSize = 20
+  pageSize = 20,
+  tag
 ) {
   const query = `
     query GetProducts($first: Int!, $after: String, $query: String) {
@@ -21,6 +22,7 @@ export async function getPaginatedProductsFromShopify(
             id
             title
             handle
+            tags
             variants(first: 1) {
               edges {
                 node {
@@ -50,10 +52,11 @@ export async function getPaginatedProductsFromShopify(
     }
   `;
 
+
   const variables = {
     first: Number(pageSize),
     after: cursor,
-    query: "status:active tag:'813'"
+    query: `status:active tag:'${tag}'`
   };
 
   try {
@@ -72,6 +75,7 @@ export async function getPaginatedProductsFromShopify(
         id: node.id,
         title: node.title,
         handle: node.handle,
+        tags: node.tags,
         images: node.images.edges.map((e) => ({
           src: e.node.originalSrc,
           alt: e.node.altText,

@@ -1,9 +1,9 @@
-export const addServices = async (order_id, service_ids) => {
+export const addServices = async (order_id, service_ids, apiKey) => {
   try {
     const response = await fetch(`https://customer-api.realauthentication.com/v2/orders/${order_id}/services`, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${process.env.RAU_API_KEY}`,
+        'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ services: service_ids }),

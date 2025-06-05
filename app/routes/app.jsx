@@ -21,8 +21,9 @@ export default function App() {
       <NavMenu>
         <Link to="/app" rel="home">Home</Link>
         {/* <Link to="/app/new-form">Add New</Link> */}
-        <Link to="/app/about-api">About Api</Link>
+        {/* <Link to="/app/about-api">About Api</Link> */}
         <Link to="/app/content">Content</Link>
+        <Link to="/app/settings">Settings</Link>
       </NavMenu>
       <Outlet />
     </AppProvider>

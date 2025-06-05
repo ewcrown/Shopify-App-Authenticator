@@ -1,8 +1,8 @@
-export const getServices = async () => {
+export const getServices = async (apiKey) => {
   try {
     const response = await fetch("https://customer-api.realauthentication.com/v2/services", {
       headers: {
-        Authorization: `Bearer ${process.env.RAU_API_KEY}`,
+        Authorization: `Bearer ${apiKey}`,
       },
     });
 

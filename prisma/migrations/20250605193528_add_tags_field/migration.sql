@@ -7,10 +7,11 @@ CREATE TABLE "new_Product" (
     "title" TEXT NOT NULL,
     "handle" TEXT NOT NULL,
     "order_id" TEXT NOT NULL,
+    "tags" TEXT NOT NULL DEFAULT '',
     "error_handle" TEXT,
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
-INSERT INTO "new_Product" ("error_handle", "handle", "id", "order_id", "shopifyId", "title") SELECT "error_handle", "handle", "id", "order_id", "shopifyId", "title" FROM "Product";
+INSERT INTO "new_Product" ("createdAt", "error_handle", "handle", "id", "order_id", "shopifyId", "title") SELECT "createdAt", "error_handle", "handle", "id", "order_id", "shopifyId", "title" FROM "Product";
 DROP TABLE "Product";
 ALTER TABLE "new_Product" RENAME TO "Product";
 CREATE UNIQUE INDEX "Product_shopifyId_key" ON "Product"("shopifyId");

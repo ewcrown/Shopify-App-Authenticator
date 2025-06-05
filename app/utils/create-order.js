@@ -1,9 +1,9 @@
-export const createOrder = async (payload) => {
+export const createOrder = async (payload,apiKey) => {
   try {
     const response = await fetch('https://customer-api.realauthentication.com/v2/orders', {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${process.env.RAU_API_KEY}`,
+        Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify(payload),

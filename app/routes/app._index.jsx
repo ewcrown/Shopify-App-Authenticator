@@ -1,3 +1,4 @@
+// app/routes/index.jsx
 import React, { useEffect, useState } from "react";
 import { json } from "@remix-run/node";
 import { useFetcher } from "@remix-run/react";
@@ -14,6 +15,7 @@ import {
 import { TitleBar, useAppBridge } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
 import { syncAllProducts } from "../utils/syncing-product";
+import prisma from "../db.server"; // ✅ Import Prisma client
 
 export async function action({ request }) {
   const formData = await request.formData();
@@ -21,10 +23,24 @@ export async function action({ request }) {
   if (intent !== "syncProducts") return null;
 
   const cursor = formData.get("cursor") || null;
+
   try {
     const { admin, session } = await authenticate.admin(request);
+
+    // ✅ Fetch tag and apiKey from Settings
+    const settings = await prisma.settings.findFirst();
+    if (!settings) {
+      throw new Error("Settings not found. Please set API Key and Tag in the Settings panel.");
+    }
+
     const batchSize = 100;
-    const result = await syncAllProducts(admin, session, cursor, batchSize);
+
+    // ✅ Pass settings into syncing logic
+    const result = await syncAllProducts(admin, session, cursor, batchSize, {
+      tag: settings.tag,
+      apiKey: settings.apiKey,
+    });
+
     return json({ success: true, ...result });
   } catch (error) {
     console.error("Sync Action Error:", error);
@@ -99,7 +115,7 @@ export default function Index() {
 
                 {running && (
                   <Text variant="bodyMd" tone="subdued">
-                    Sync in progress… <strong>✅ {processed}</strong> successful,{' '}
+                    Sync in progress… <strong>✅ {processed}</strong> successful,{" "}
                     <strong>❌ {failed}</strong> failed
                   </Text>
                 )}

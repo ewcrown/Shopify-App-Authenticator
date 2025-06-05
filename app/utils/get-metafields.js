@@ -28,7 +28,7 @@ export const getMetafields = async (admin, product_id) => {
     const response = await admin.graphql(query, { variables });
     const resp = await response.json();
     const edges = resp.data.product?.metafields?.edges || [];
-    console.log("🧩 Metafields fetched:", edges);
+    // console.log("🧩 Metafields fetched:", edges);
     return edges;
   } catch (err) {
     console.error("⚠️ getMetafields error:", err);

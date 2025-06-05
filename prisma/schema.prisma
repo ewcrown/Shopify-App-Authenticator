@@ -19,11 +19,25 @@ model Product {
   title        String
   handle       String     @unique
   order_id     String
+  tags         String     @default("")
   error_handle String?
   createdAt    DateTime   @default(now())
 
   @@index([shopifyId])
   @@index([handle])
+}
+
+model Settings {
+  id        String   @id @default(cuid())
+  apiKey    String
+  tag       String
+  createdAt DateTime @default(now())
+}
+
+model SyncState {
+  id        Int     @id @default(autoincrement())
+  shop      String  @unique
+  cancelled Boolean @default(false)
 }
 
 model Session {

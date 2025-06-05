@@ -1,7 +1,7 @@
 import fetch from 'node-fetch';
 import FormData from 'form-data';
 
-export const uploadImage = async (imageUrl) => {
+export const uploadImage = async (imageUrl, apiKey) => {
   try {
     const response = await fetch(imageUrl);
     const contentType = response.headers.get("content-type");
@@ -19,7 +19,7 @@ export const uploadImage = async (imageUrl) => {
     const uploadResponse = await fetch("https://customer-api.realauthentication.com/v2/images", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${process.env.RAU_API_KEY}`,
+        Authorization: `Bearer ${apiKey}`,
         ...form.getHeaders(),
       },
       body: form,
