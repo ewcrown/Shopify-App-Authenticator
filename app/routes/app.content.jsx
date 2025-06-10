@@ -1,20 +1,43 @@
 import { json } from "@remix-run/node";
-import { useLoaderData } from "@remix-run/react";
+import { useLoaderData, useFetcher } from "@remix-run/react";
 import prisma from "../db.server";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 
+// Loader: fetch all products
 export async function loader() {
   const products = await prisma.product.findMany();
   return json({ products });
 }
 
+// Action: delete a single product
+export async function action({ request }) {
+  const formData = await request.formData();
+  const productId = formData.get("productId");
+
+  if (productId) {
+    try {
+      await prisma.product.delete({
+        where: { id: productId },
+      });
+      return json({ success: true, productId });
+    } catch (error) {
+      return json({ success: false, error: error.message }, { status: 500 });
+    }
+  }
+
+  return json({ success: false, error: "Missing productId" }, { status: 400 });
+}
+
 export default function ProductsPage() {
   const { products } = useLoaderData();
-  const [sort, setSort] = useState("asc"); // "asc" = A–Z, "latest" = newest first
+  const fetcher = useFetcher();
+
+  const [sort, setSort] = useState("asc");
   const [activeTab, setActiveTab] = useState("success");
   const [selectedTag, setSelectedTag] = useState("all");
+  const [filteredState, setFilteredState] = useState([]);
 
-  // Unique tag list for filter
+  // Extract unique tags
   const allTags = useMemo(() => {
     const tagSet = new Set();
     products.forEach((p) => {
@@ -34,15 +57,31 @@ export default function ProductsPage() {
     return copy.sort((a, b) => a.title.localeCompare(b.title));
   }, [products, sort]);
 
-  // Split by status
-  const success = sortedProducts.filter((p) => !p.error_handle);
-  const failed = sortedProducts.filter((p) => Boolean(p.error_handle));
+  // Filter by tab (success or failed)
+  const filteredByTab = useMemo(() => {
+    return (activeTab === "success"
+      ? sortedProducts.filter((p) => !p.error_handle)
+      : sortedProducts.filter((p) => Boolean(p.error_handle))
+    );
+  }, [sortedProducts, activeTab]);
 
-  // Apply tag filter
-  const filtered = (activeTab === "success" ? success : failed).filter((p) => {
-    if (selectedTag === "all") return true;
-    return p.tags?.split(",").map((t) => t.trim()).includes(selectedTag);
-  });
+  // Filter by tag
+  const filtered = useMemo(() => {
+    return filteredByTab.filter((p) => {
+      if (selectedTag === "all") return true;
+      return p.tags?.split(",").map((t) => t.trim()).includes(selectedTag);
+    });
+  }, [filteredByTab, selectedTag]);
+
+  // Keep filteredState in sync with logic
+  useEffect(() => {
+    setFilteredState(filtered);
+  }, [filtered]);
+
+  // Handle deletion client-side
+  const handleDelete = (id) => {
+    setFilteredState((prev) => prev.filter((item) => item.id !== id));
+  };
 
   return (
     <>
@@ -81,7 +120,7 @@ export default function ProductsPage() {
           width: 100%;
           border-collapse: collapse;
           font-size: 14px;
-          min-width: 600px;
+          min-width: 700px;
         }
         .data-table th {
           background: #F4F6F8;
@@ -99,48 +138,39 @@ export default function ProductsPage() {
         .data-table tr:nth-child(even) td {
           background: #FBFDFF;
         }
+        .delete-button {
+          background: none;
+          border: none;
+          color: red;
+          cursor: pointer;
+          font-size: 13px;
+        }
       `}</style>
 
       <main className="product-page">
         <h1 className="product-title">Products</h1>
 
         {/* Sort Dropdown */}
-        <select
-          className="sort-select"
-          value={sort}
-          onChange={(e) => setSort(e.target.value)}
-        >
+        <select className="sort-select" value={sort} onChange={(e) => setSort(e.target.value)}>
           <option value="asc">Sort by A–Z</option>
           <option value="latest">Sort by Latest</option>
         </select>
 
         {/* Tag Filter Dropdown */}
-        <select
-          className="sort-select"
-          value={selectedTag}
-          onChange={(e) => setSelectedTag(e.target.value)}
-        >
+        <select className="sort-select" value={selectedTag} onChange={(e) => setSelectedTag(e.target.value)}>
           <option value="all">All Tags</option>
           {allTags.map((tag) => (
-            <option key={tag} value={tag}>
-              {tag}
-            </option>
+            <option key={tag} value={tag}>{tag}</option>
           ))}
         </select>
 
         {/* Tabs */}
         <nav className="tabs">
-          <button
-            className={`tab${activeTab === "success" ? " active" : ""}`}
-            onClick={() => setActiveTab("success")}
-          >
-            Active Products ({success.length})
+          <button className={`tab${activeTab === "success" ? " active" : ""}`} onClick={() => setActiveTab("success")}>
+            Active Products ({sortedProducts.filter((p) => !p.error_handle).length})
           </button>
-          <button
-            className={`tab${activeTab === "failed" ? " active" : ""}`}
-            onClick={() => setActiveTab("failed")}
-          >
-            Failed Products ({failed.length})
+          <button className={`tab${activeTab === "failed" ? " active" : ""}`} onClick={() => setActiveTab("failed")}>
+            Failed Products ({sortedProducts.filter((p) => Boolean(p.error_handle)).length})
           </button>
         </nav>
 
@@ -156,10 +186,11 @@ export default function ProductsPage() {
                 <th>Tags</th>
                 <th>Error</th>
                 <th>Created At</th>
+                <th>Remove</th>
               </tr>
             </thead>
             <tbody>
-              {filtered.map((p) => (
+              {filteredState.map((p) => (
                 <tr key={p.id}>
                   <td>{p.shopifyId}</td>
                   <td>{p.title}</td>
@@ -170,6 +201,27 @@ export default function ProductsPage() {
                     {p.error_handle || "-"}
                   </td>
                   <td>{new Date(p.createdAt).toLocaleDateString()}</td>
+                  <td>
+                    <fetcher.Form method="post">
+                      <input type="hidden" name="productId" value={p.id} />
+                      <button
+                        type="submit"
+                        className="delete-button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          if (window.confirm("Are you sure you want to delete this product?")) {
+                            fetcher.submit(
+                              { productId: p.id },
+                              { method: "post" }
+                            );
+                            handleDelete(p.id);
+                          }
+                        }}
+                      >
+                        Remove
+                      </button>
+                    </fetcher.Form>
+                  </td>
                 </tr>
               ))}
             </tbody>

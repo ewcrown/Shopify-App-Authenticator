@@ -3,7 +3,7 @@
 client_id = "caec388204048b32c199650ad00869b8"
 name = "real-authenticator-v1"
 handle = "real-authenticator-v1"
-application_url = "https://heath-gain-reserves-everything.trycloudflare.com"
+application_url = "https://americans-trading-verification-likely.trycloudflare.com"
 embedded = true
 
 [build]
@@ -31,9 +31,9 @@ scopes = "read_products,write_products"
 
 [auth]
 redirect_urls = [
-  "https://heath-gain-reserves-everything.trycloudflare.com/auth/callback",
-  "https://heath-gain-reserves-everything.trycloudflare.com/auth/shopify/callback",
-  "https://heath-gain-reserves-everything.trycloudflare.com/api/auth/callback"
+  "https://americans-trading-verification-likely.trycloudflare.com/auth/callback",
+  "https://americans-trading-verification-likely.trycloudflare.com/auth/shopify/callback",
+  "https://americans-trading-verification-likely.trycloudflare.com/api/auth/callback"
 ]
 
 [pos]

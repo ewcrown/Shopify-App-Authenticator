@@ -104,14 +104,14 @@ export async function syncAllProducts(admin, session, cursor = null, pageSize = 
       
       if (!orderResult?.id) throw new Error("Order creation failed");
 
-      const uploadedUrls = (orderResult.images || [])
-        .map(img => img.image?.url)
-        .filter(Boolean);
+      // const uploadedUrls = (orderResult.images || [])
+      //   .map(img => img.image?.url)
+      //   .filter(Boolean);
 
-      if (uploadedUrls.length > 0) {
+      // if (uploadedUrls.length > 0) {
 
-        await uploadImagesToShopifyProduct(admin, shopifyId, uploadedUrls);
-      }
+      //   await uploadImagesToShopifyProduct(admin, shopifyId, uploadedUrls);
+      // }
 
       if (service_ids_payload.length) {
         await addServices(orderResult.id, service_ids_payload, apiKey);
